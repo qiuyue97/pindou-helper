@@ -1,24 +1,31 @@
 services:
   pindou:
-    build: .
+    build:
+      context: .
+      # 默认走国内镜像源。墙外构建时覆盖成官方源：
+      #   REGISTRY=docker.io NPM_REGISTRY=https://registry.npmjs.org \
+      #   PIP_INDEX=https://pypi.org/simple APT_MIRROR=deb.debian.org \
+      #   docker compose build
+      args:
+        REGISTRY: ${REGISTRY:-docker.m.daocloud.io}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
+        PIP_INDEX: ${PIP_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}
+        APT_MIRROR: ${APT_MIRROR:-mirrors.tuna.tsinghua.edu.cn}
     image: pindou-helper:latest
     container_name: pindou-helper
     ports:
-      # Change the left-hand port if 8000 is taken on your NAS.
+      # 反代监听 443，转发到这里。若 8000 已被占用改左边这个。
       - "8000:8000"
     environment:
-      # Required. Sessions are signed with this — changing it logs everyone out.
+      # 必填。会话用它签名，改动会让所有人重新登录。
       PINDOU_JWT_SECRET: ${PINDOU_JWT_SECRET:?set PINDOU_JWT_SECRET in .env}
-      # Keep "0" when you reach the NAS over plain http:// on the LAN.
-      # Set to "1" only when it is served over https:// (e.g. behind a reverse proxy),
-      # otherwise the browser will refuse to store the session cookie and you
-      # will be logged out on every request.
-      PINDOU_COOKIE_SECURE: ${PINDOU_COOKIE_SECURE:-0}
-      # Affects server log timestamps. The UI renders times in the browser's
-      # own timezone, so this does not change what you see in the app.
+      # 默认 1，因为本项目预期部署在 https 后面。
+      # 只有在临时用 http:// 直连调试时才改成 0，否则浏览器会拒存 cookie。
+      PINDOU_COOKIE_SECURE: ${PINDOU_COOKIE_SECURE:-1}
+      # 影响服务端日志时间戳；界面时间用浏览器本地时区。
       TZ: ${TZ:-Asia/Shanghai}
     volumes:
-      # SQLite lives here. Back this up and you have backed up everything.
+      # SQLite 在这里。备份这一个卷就等于备份全部数据。
       - pindou-data:/data
     restart: unless-stopped
 

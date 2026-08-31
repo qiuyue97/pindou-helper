@@ -11,3 +11,6 @@ __pycache__/
 
 # python editable install
 *.egg-info/
+
+# 开发过程文档：本地保留，不推到远端
+docs/superpowers/

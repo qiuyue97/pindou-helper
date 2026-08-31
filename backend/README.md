@@ -1,6 +1,6 @@
 # pindou-helper backend
 
-FastAPI + SQLite. See `../docs/superpowers/specs/2026-08-31-pindou-helper-design.md`.
+FastAPI + SQLite + 事件重放。整体介绍见仓库根目录的 `README.md`。
 
 ## Dev
 

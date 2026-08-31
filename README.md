@@ -118,17 +118,36 @@ echo "PINDOU_JWT_SECRET=$(openssl rand -hex 32)" > .env
 docker compose up -d --build
 ```
 
-打开 `http://<你的NAS地址>:8000`，注册第一个账号即可。库存从空开始。
+容器监听 8000，前面挂你的反向代理终止 TLS，然后访问
+`https://<你的域名>` 注册第一个账号即可。库存从空开始。
 
-镜像会自己校验：构建时会断言色卡是 291 色且能从安装后的包里读到，
-数据不对时构建直接失败，不会产出一个坏镜像。
+镜像默认使用国内源（DaoCloud 镜像库、npmmirror、清华 PyPI/Debian），
+NAS 上不必额外配置。墙外构建时用 `--build-arg` 覆盖回官方源，
+四个参数都写在 `.env.example` 里。
+
+镜像会自己校验：构建时断言色卡是 291 色，且能从**安装后的包**里读到
+（故意换到 `/` 目录 import），打包退化时构建直接失败，不会产出坏镜像。
+留意输出里的 `catalogue ok: 291`。
+
+**反向代理**：容器以 `--proxy-headers` 启动，会认 `X-Forwarded-Proto` /
+`X-Forwarded-For`。反代记得把这两个头传下来。Nginx 示例：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
 
 **配置项**（都在 `.env`，模板见 `.env.example`）：
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `PINDOU_JWT_SECRET` | 必填 | 会话签名密钥，≥32 字符 |
-| `PINDOU_COOKIE_SECURE` | `0` | 走 `https://` 时才设为 `1`，否则浏览器会拒存 cookie，导致一直掉登录 |
+| `PINDOU_COOKIE_SECURE` | `1` | 默认按 https 部署。仅在临时用 `http://` 直连调试时改成 `0`，否则浏览器会拒存 cookie，表现为每次请求都掉登录 |
 | `TZ` | `Asia/Shanghai` | 只影响服务端日志时间；界面时间用浏览器本地时区 |
 
 **数据与备份**：SQLite 在名为 `pindou-data` 的卷里（容器内 `/data/pindou.db`）。
