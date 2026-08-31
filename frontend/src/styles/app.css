@@ -62,6 +62,16 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .stockout textarea { padding: 0.4rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
 .stockout button { justify-self: start; padding: 0.35rem 0.8rem; border: 1px solid var(--line); background: #fff; border-radius: 5px; }
 
+.oplist { list-style: none; padding: 0; margin: 1rem 0; display: grid; gap: 0.35rem; }
+.oplist li { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.oplist li.voided { opacity: 0.55; text-decoration: line-through; }
+.opseq { font-variant-numeric: tabular-nums; color: var(--muted); }
+.oplist time { color: var(--muted); font-size: 0.85rem; }
+.opsummary { flex: 1 1 14rem; }
+.opactions { display: flex; gap: 0.4rem; }
+.opactions button { padding: 0.25rem 0.6rem; border: 1px solid var(--line); background: #fff; border-radius: 5px; }
+.tag { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 999px; background: #eee; color: var(--muted); }
+
 @media (max-width: 640px) {
   .topbar { gap: 0.5rem; }
   .topbar-right { width: 100%; margin-left: 0; }
