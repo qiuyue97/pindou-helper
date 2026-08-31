@@ -1,30 +1,64 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import { apiSend } from '../api/client';
 import { useApiMutation, useInventory } from '../api/hooks';
 import type { ChangesOut } from '../api/types';
+import type { EffectiveColor } from '../color/catalog';
+import { SERIES_221, type CandidateSet } from '../color/match';
+import { swatchTextColor } from '../lib/contrast';
 import { formatChanges, qtyTier } from '../lib/qty';
 import { useAuth } from '../state/AuthContext';
 import { useToast } from '../state/ToastContext';
 import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
-import Swatch from './Swatch';
 
-export default function InventoryTable() {
+const S221 = new Set<string>(SERIES_221);
+
+interface Section {
+  label: string;
+  series: [string, EffectiveColor[]][];
+}
+
+/** Group the catalogue into ordered series columns, split into at most two sections. */
+function buildSections(colors: EffectiveColor[], scopeSet: CandidateSet): Section[] {
+  const groups = new Map<string, EffectiveColor[]>();
+  for (const c of colors) {
+    if (scopeSet === '221' && c.source !== 'custom' && !S221.has(c.series)) continue;
+    const bucket = groups.get(c.series);
+    if (bucket) bucket.push(c);
+    else groups.set(c.series, [c]);
+  }
+
+  const standard: [string, EffectiveColor[]][] = [];
+  const special: [string, EffectiveColor[]][] = [];
+  for (const [series, list] of groups) {
+    (S221.has(series) ? standard : special).push([series, list]);
+  }
+
+  const sections: Section[] = [];
+  if (standard.length) sections.push({ label: '标准色 A–M', series: standard });
+  if (special.length) sections.push({ label: '特殊色', series: special });
+  // With only one section there is nothing to distinguish, so drop the heading.
+  return sections.length === 1 ? [{ ...sections[0]!, label: '' }] : sections;
+}
+
+export default function InventoryTable({ scopeSet }: { scopeSet: CandidateSet }) {
   const { me } = useAuth();
   const { show } = useToast();
-  const { byCode } = useEffectiveCatalog();
+  const { colors } = useEffectiveCatalog();
   const { data: rows, isLoading } = useInventory();
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
   const threshold = me?.threshold ?? 0;
+  const quantities = useMemo(
+    () => new Map((rows ?? []).map((r) => [r.code, r.quantity])),
+    [rows],
+  );
+  const sections = useMemo(() => buildSections(colors, scopeSet), [colors, scopeSet]);
 
   const setQty = useApiMutation((v: { code: string; quantity: number }) =>
     apiSend<ChangesOut>('PUT', `/api/inventory/${encodeURIComponent(v.code)}`, {
       quantity: v.quantity,
     }),
-  );
-  const removeRow = useApiMutation((code: string) =>
-    apiSend<ChangesOut>('DELETE', `/api/inventory/${encodeURIComponent(code)}`),
   );
 
   function startEdit(code: string, quantity: number) {
@@ -40,6 +74,7 @@ export default function InventoryTable() {
       show('数量应为整数');
       return;
     }
+    if (value === (quantities.get(code) ?? 0)) return;
     const res = await setQty.mutateAsync({ code, quantity: value });
     show(formatChanges(res.changes));
   }
@@ -49,68 +84,62 @@ export default function InventoryTable() {
     if (e.key === 'Escape') setEditing(null);
   }
 
-  async function onDelete(code: string) {
-    const res = await removeRow.mutateAsync(code);
-    show(formatChanges(res.changes));
-  }
-
   if (isLoading) return <p>加载中…</p>;
-  if (!rows || rows.length === 0) return <p>还没有库存记录，先添加色号或批量补货。</p>;
 
   return (
-    <table>
-      <thead>
-        <tr>
-          <th>色号</th>
-          <th>系列</th>
-          <th>颜色</th>
-          <th>数量</th>
-          <th>更新时间</th>
-          <th>操作</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const tier = qtyTier(row.quantity, threshold);
-          return (
-            <tr key={row.code}>
-              <td>{row.code}</td>
-              <td>{byCode.get(row.code)?.series ?? '—'}</td>
-              <td>
-                <Swatch code={row.code} />
-              </td>
-              <td>
-                {editing === row.code ? (
-                  <input
-                    autoFocus
-                    aria-label={`${row.code} 数量`}
-                    className="qty-input"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => onKeyDown(e, row.code)}
-                    onBlur={() => void commit(row.code)}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    className={`qty qty-${tier}`}
-                    data-tier={tier}
-                    onClick={() => startEdit(row.code, row.quantity)}
-                  >
-                    {row.quantity}
-                  </button>
-                )}
-              </td>
-              <td className="muted">{new Date(row.updated_at).toLocaleString('zh-CN')}</td>
-              <td>
-                <button type="button" onClick={() => void onDelete(row.code)}>
-                  删除
-                </button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <div className="inv">
+      {sections.map((section) => (
+        <section
+          key={section.label || 'only'}
+          className="inv-section"
+          {...(section.label ? { 'aria-label': section.label } : {})}
+        >
+          {section.label && <h3 className="inv-section-title">{section.label}</h3>}
+          <div className="inv-grid">
+            {section.series.map(([series, list]) => (
+              <div key={series} role="group" data-series={series} className="inv-col">
+                <div className="inv-col-head">{series}</div>
+                {list.map((c) => {
+                  const qty = quantities.get(c.code) ?? 0;
+                  const tier = qtyTier(qty, threshold);
+                  return (
+                    <div key={c.code} className="inv-cell" data-testid={`cell-${c.code}`}>
+                      <span
+                        className={`inv-block text-${swatchTextColor(c.hex)}`}
+                        data-testid={`block-${c.code}`}
+                        style={{ background: `#${c.hex}` }}
+                        title={`${c.code} #${c.hex}`}
+                      >
+                        {c.code}
+                      </span>
+                      {editing === c.code ? (
+                        <input
+                          autoFocus
+                          aria-label={`${c.code} 数量`}
+                          className="inv-qty-input"
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          onKeyDown={(e) => onKeyDown(e, c.code)}
+                          onBlur={() => void commit(c.code)}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          className={`inv-qty qty-${tier}`}
+                          data-tier={tier}
+                          onClick={() => startEdit(c.code, qty)}
+                        >
+                          {qty}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }

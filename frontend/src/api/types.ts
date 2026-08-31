@@ -81,6 +81,10 @@ export interface OperationRow {
   type: OpType;
   summary: string;
   entries: OpEntry[];
+  /** e.g. "ALL(221)" when the operation used the wildcard; null otherwise. */
+  scope_label: string | null;
+  /** The text the user originally typed — the edit dialog prefills from this. */
+  raw: string | null;
   voided: boolean;
   created_at: string;
   edited_at: string | null;

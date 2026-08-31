@@ -123,3 +123,21 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .colors-page input[type="search"] { max-width: 16rem; padding: 0.4rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
 .source-tag { font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #eee; color: var(--muted); }
 .advanced-tables { display: flex; gap: 1rem; flex-wrap: wrap; }
+.inv { display: grid; gap: 1.2rem; }
+.inv-section-title { font-size: 0.9rem; margin: 0 0 0.4rem; color: var(--muted); font-weight: 600; }
+.inv-grid { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: flex-start; }
+.inv-col { display: grid; gap: 2px; min-width: 58px; }
+.inv-col-head { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-align: center; padding-bottom: 2px; }
+.inv-cell { display: grid; gap: 0; }
+.inv-block { display: block; font-size: 0.68rem; line-height: 1.6; text-align: center; border-radius: 3px 3px 0 0; border: 1px solid var(--line); border-bottom: 0; font-variant-numeric: tabular-nums; }
+.inv-block.text-dark { color: #1c1c1a; }
+.inv-block.text-light { color: #fff; }
+.inv-qty { width: 100%; font-size: 0.72rem; line-height: 1.5; padding: 0; border: 1px solid var(--line); border-radius: 0 0 3px 3px; background: #fff; font-variant-numeric: tabular-nums; }
+.inv-qty-input { width: 100%; font-size: 0.72rem; line-height: 1.5; padding: 0; border: 1px solid var(--accent); border-radius: 0 0 3px 3px; text-align: center; font: inherit; }
+.scope-picker { display: inline-flex; align-items: center; gap: 0.6rem; }
+.scope-picker label { display: inline-flex; align-items: center; gap: 0.25rem; }
+
+@media (max-width: 640px) {
+  .inv-col { min-width: 52px; }
+  .inv-block, .inv-qty { font-size: 0.65rem; }
+}

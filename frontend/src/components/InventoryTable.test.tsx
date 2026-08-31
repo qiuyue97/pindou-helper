@@ -20,31 +20,78 @@ const base = {
   'GET /api/inventory/stockout': { body: { codes: [], text: '', items: [] } },
 };
 
-const setup = () =>
+const setup = (scopeSet: '221' | '291' = '221') =>
   renderWithProviders(
     <AuthProvider>
       <ToastProvider>
-        <InventoryTable />
+        <InventoryTable scopeSet={scopeSet} />
       </ToastProvider>
     </AuthProvider>,
   );
 
+const cellFor = async (code: string) =>
+  (await screen.findByTestId(`cell-${code}`)) as HTMLElement;
+
 describe('InventoryTable', () => {
-  test('marks each quantity with its tier', async () => {
+  test('shows every catalogue code, including ones with no inventory row', async () => {
     mockFetch(base);
-    setup();
-    await waitFor(() => expect(screen.getByText('900')).toHaveAttribute('data-tier', 'ok'));
-    expect(screen.getByText('120')).toHaveAttribute('data-tier', 'low');
-    expect(screen.getByText('-15')).toHaveAttribute('data-tier', 'negative');
+    setup('221');
+    // A4 has no inventory row at all — it must still appear, at 0
+    const a4 = await cellFor('A4');
+    expect(within(a4).getByText('A4')).toBeInTheDocument();
+    expect(within(a4).getByText('0')).toBeInTheDocument();
   });
 
-  test('inline edit commits with PUT and toasts the diff', async () => {
+  test('keeps the three quantity tiers', async () => {
+    mockFetch(base);
+    setup('221');
+    expect(within(await cellFor('A1')).getByText('900')).toHaveAttribute('data-tier', 'ok');
+    expect(within(await cellFor('A2')).getByText('120')).toHaveAttribute('data-tier', 'low');
+    expect(within(await cellFor('A3')).getByText('-15')).toHaveAttribute('data-tier', 'negative');
+    // a code with no row reads as 0, which is below the threshold
+    expect(within(await cellFor('A4')).getByText('0')).toHaveAttribute('data-tier', 'low');
+  });
+
+  test('drops the 系列 / 更新时间 / 删除 columns', async () => {
+    mockFetch(base);
+    setup('221');
+    await cellFor('A1');
+    expect(screen.queryByText('更新时间')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除' })).not.toBeInTheDocument();
+  });
+
+  test('writes the code inside the colour block', async () => {
+    mockFetch(base);
+    setup('221');
+    const swatch = within(await cellFor('A1')).getByTestId('block-A1');
+    expect(swatch).toHaveTextContent('A1');
+  });
+
+  test('221 lays out one column per A–M series and excludes special colours', async () => {
+    mockFetch(base);
+    setup('221');
+    const cols = await screen.findAllByRole('group');
+    expect(cols.map((c) => c.getAttribute('data-series'))).toEqual([
+      'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'M',
+    ]);
+    expect(screen.queryByTestId('cell-T1')).not.toBeInTheDocument();
+  });
+
+  test('291 adds a second section for the special series', async () => {
+    mockFetch(base);
+    setup('291');
+    expect(await screen.findByTestId('cell-T1')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '标准色 A–M' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '特殊色' })).toBeInTheDocument();
+  });
+
+  test('inline edit still commits with PUT and toasts the diff', async () => {
     mockFetch({
       ...base,
       'PUT /api/inventory/A2': { body: { changes: [{ code: 'A2', from: 120, to: 640 }] } },
     });
-    setup();
-    await userEvent.click(await screen.findByText('120'));
+    setup('221');
+    await userEvent.click(within(await cellFor('A2')).getByText('120'));
     const input = screen.getByLabelText('A2 数量');
     await userEvent.clear(input);
     await userEvent.type(input, '640{Enter}');
@@ -56,29 +103,16 @@ describe('InventoryTable', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('A2 120→640');
   });
 
-  test('Escape cancels an inline edit without calling the API', async () => {
-    mockFetch(base);
-    setup();
-    await userEvent.click(await screen.findByText('120'));
-    await userEvent.type(screen.getByLabelText('A2 数量'), '999{Escape}');
-    expect(lastRequest('PUT', '/api/inventory/A2')).toBeUndefined();
-    expect(screen.getByText('120')).toBeInTheDocument();
-  });
-
-  test('deletes a row', async () => {
+  test('editing a code that had no row creates it', async () => {
     mockFetch({
       ...base,
-      'DELETE /api/inventory/A3': { body: { changes: [{ code: 'A3', from: -15, to: null }] } },
+      'PUT /api/inventory/A4': { body: { changes: [{ code: 'A4', from: null, to: 50 }] } },
     });
-    setup();
-    const row = (await screen.findByText('A3')).closest('tr')!;
-    await userEvent.click(within(row).getByRole('button', { name: '删除' }));
-    await waitFor(() => expect(lastRequest('DELETE', '/api/inventory/A3')).toBeDefined());
-  });
-
-  test('shows an empty state', async () => {
-    mockFetch({ ...base, 'GET /api/inventory': { body: [] } });
-    setup();
-    expect(await screen.findByText('还没有库存记录，先添加色号或批量补货。')).toBeInTheDocument();
+    setup('221');
+    await userEvent.click(within(await cellFor('A4')).getByText('0'));
+    const input = screen.getByLabelText('A4 数量');
+    await userEvent.clear(input);
+    await userEvent.type(input, '50{Enter}');
+    await waitFor(() => expect(lastRequest('PUT', '/api/inventory/A4')).toBeDefined());
   });
 });

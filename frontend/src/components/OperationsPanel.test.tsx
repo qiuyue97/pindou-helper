@@ -16,6 +16,8 @@ const ops = [
     created_at: '2026-08-31T15:32:00Z',
     edited_at: null,
     note: null,
+    scope_label: null,
+    raw: 'A1,30',
   },
   {
     seq: 1,
@@ -26,6 +28,8 @@ const ops = [
     created_at: '2026-08-31T13:02:00Z',
     edited_at: null,
     note: null,
+    scope_label: null,
+    raw: null,
   },
 ];
 
@@ -110,5 +114,44 @@ describe('OperationsPanel', () => {
       type: 'batch_deduct',
       payload: { raw: 'A1,40', lines: [{ code: 'A1', qty: 40 }] },
     });
+  });
+
+  test('an ALL operation shows its scope and edits within that same scope', async () => {
+    const allOp = {
+      seq: 3,
+      type: 'batch_add',
+      summary: '批量补货 ALL(221) +100',
+      entries: [{ code: 'ALL', kind: 'add', amount: 100 }],
+      voided: false,
+      created_at: '2026-08-31T16:00:00Z',
+      edited_at: null,
+      note: null,
+      scope_label: 'ALL(221)',
+      raw: 'ALL,100',
+    };
+    mockFetch({
+      ...base,
+      'GET /api/operations?limit=50': { body: [allOp] },
+      'PATCH /api/operations/3': { body: { changes: [{ code: 'A1', from: 100, to: 80 }] } },
+    });
+    setup();
+
+    const first = (await screen.findAllByRole('listitem'))[0]!;
+    expect(first).toHaveTextContent('ALL(221)');
+    // one entry, not 221
+    await userEvent.click(within(first).getByRole('button', { name: '编辑' }));
+
+    const ta = (await screen.findByLabelText('批量输入')) as HTMLTextAreaElement;
+    expect(ta.value).toBe('ALL,100');
+    await userEvent.clear(ta);
+    await userEvent.type(ta, 'ALL,80');
+    await userEvent.click(screen.getByRole('button', { name: '应用' }));
+
+    await waitFor(() => expect(lastRequest('PATCH', '/api/operations/3')).toBeDefined());
+    const body = JSON.parse(String(lastRequest('PATCH', '/api/operations/3')!.init!.body));
+    expect(body.payload.scope).toEqual({ kind: 'all', set: '221', include_custom: true });
+    expect(body.payload.raw).toBe('ALL,80');
+    expect(body.payload.lines).toHaveLength(221);
+    expect(body.payload.lines.every((l: { qty: number }) => l.qty === 80)).toBe(true);
   });
 });

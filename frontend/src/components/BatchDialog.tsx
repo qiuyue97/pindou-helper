@@ -2,8 +2,10 @@ import { useMemo, useRef, useState } from 'react';
 import { apiSend } from '../api/client';
 import { useApiMutation, useInventory } from '../api/hooks';
 import type { BatchLineResult, BatchOut } from '../api/types';
+import { ALL_CODE, isAllCode, scopeCodes } from '../lib/allScope';
 import { parseLines } from '../lib/parseLines';
 import { formatChanges } from '../lib/qty';
+import type { CandidateSet } from '../color/match';
 import { useToast } from '../state/ToastContext';
 import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
 import Modal from './Modal';
@@ -16,6 +18,8 @@ interface PreviewRow {
   qty: number | null;
   status: Status;
   advisory: string;
+  /** For an ALL row: how many codes it expands to. */
+  expandsTo?: number;
 }
 
 const STATUS_TEXT: Record<Status, string> = {
@@ -27,29 +31,51 @@ const STATUS_TEXT: Record<Status, string> = {
 
 export default function BatchDialog({
   mode,
+  scopeSet,
+  includeCustom = true,
   initialText,
   onClose,
   onSubmit,
 }: {
   mode: 'add' | 'deduct';
+  /** Which catalogue an ALL row covers. Comes from the inventory page selector. */
+  scopeSet: CandidateSet;
+  includeCustom?: boolean;
   initialText?: string;
   onClose: () => void;
   onSubmit?: (text: string) => Promise<void>;
 }) {
   const { show } = useToast();
-  const { byCode } = useEffectiveCatalog();
+  const { byCode, colors } = useEffectiveCatalog();
   const { data: inventory } = useInventory();
   const [text, setText] = useState(initialText ?? '');
   const [serverResults, setServerResults] = useState<BatchLineResult[] | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
-  const apply = useApiMutation((v: { mode: 'add' | 'deduct'; text: string }) =>
-    apiSend<BatchOut>('POST', '/api/inventory/batch', v),
+  const allCodes = useMemo(
+    () => scopeCodes(colors, scopeSet, includeCustom),
+    [colors, scopeSet, includeCustom],
+  );
+
+  const apply = useApiMutation(
+    (v: { mode: 'add' | 'deduct'; text: string; scope: { set: CandidateSet; include_custom: boolean } }) =>
+      apiSend<BatchOut>('POST', '/api/inventory/batch', v),
   );
 
   const rows: PreviewRow[] = useMemo(() => {
     const have = new Map((inventory ?? []).map((r) => [r.code, r.quantity]));
     return parseLines(text).map((l) => {
+      // ALL is a wildcard, not a catalogue code — never flag it as unknown.
+      if (l.status === 'ok' && isAllCode(l.code)) {
+        return {
+          lineNo: l.lineNo,
+          code: ALL_CODE,
+          qty: l.qty,
+          status: 'ok' as Status,
+          advisory: '',
+          expandsTo: allCodes.length,
+        };
+      }
       let status: Status = l.status;
       if (status === 'ok' && (l.code === null || !byCode.has(l.code))) status = 'code_not_found';
       let advisory = '';
@@ -58,7 +84,7 @@ export default function BatchDialog({
       }
       return { lineNo: l.lineNo, code: l.code, qty: l.qty, status, advisory };
     });
-  }, [text, byCode, inventory, mode]);
+  }, [text, byCode, inventory, mode, allCodes]);
 
   const canApply = rows.length > 0 && rows.every((r) => r.status === 'ok');
 
@@ -77,7 +103,11 @@ export default function BatchDialog({
       onClose();
       return;
     }
-    const res = await apply.mutateAsync({ mode, text });
+    const res = await apply.mutateAsync({
+      mode,
+      text,
+      scope: { set: scopeSet, include_custom: includeCustom },
+    });
     if (!res.applied) {
       setServerResults(res.results);
       return;
@@ -118,6 +148,10 @@ export default function BatchDialog({
       <label htmlFor="batch-text">
         每行一条，格式 <code>色号,数量</code>（中文逗号或空格也可以）
       </label>
+      <p className="muted">
+        用 <code>ALL,100</code> 表示当前 {scopeSet} 色全部各
+        {mode === 'add' ? '补' : '扣'} 100；可以和普通行混用，写在后面的行会继续累加。
+      </p>
       <textarea
         id="batch-text"
         aria-label="批量输入"
@@ -150,7 +184,11 @@ export default function BatchDialog({
                 <td>{r.lineNo}</td>
                 <td>{r.code ?? '—'}</td>
                 <td>{r.qty ?? '—'}</td>
-                <td>{r.advisory || STATUS_TEXT[r.status]}</td>
+                <td>
+                  {r.expandsTo !== undefined
+                    ? `${r.expandsTo} 个色号`
+                    : r.advisory || STATUS_TEXT[r.status]}
+                </td>
               </tr>
             ))}
           </tbody>

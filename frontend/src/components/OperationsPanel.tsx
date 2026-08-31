@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { apiSend } from '../api/client';
 import { useApiMutation, useOperations } from '../api/hooks';
 import type { Change, ChangesOut, OperationRow } from '../api/types';
+import { isAllCode, scopeCodes } from '../lib/allScope';
 import { parseLines } from '../lib/parseLines';
+import type { CandidateSet } from '../color/match';
+import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
 import { formatChanges } from '../lib/qty';
 import { useToast } from '../state/ToastContext';
 import BatchDialog from './BatchDialog';
@@ -10,12 +13,21 @@ import ImpactDialog from './ImpactDialog';
 
 const EDITABLE_BATCH = new Set(['batch_add', 'batch_deduct']);
 
+/** The text to prefill the edit dialog with. `raw` is authoritative — an ALL
+ *  operation cannot be reconstructed from its entries. */
 function rawOf(op: OperationRow): string {
-  return op.entries.map((e) => `${e.code},${e.amount ?? 0}`).join('\n');
+  return op.raw ?? op.entries.map((e) => `${e.code},${e.amount ?? 0}`).join('\n');
+}
+
+/** An edited ALL operation keeps its ORIGINAL scope, not whatever the
+ *  inventory page happens to be showing now. */
+function scopeOf(op: OperationRow): CandidateSet {
+  return op.scope_label?.includes('221') ? '221' : '291';
 }
 
 export default function OperationsPanel() {
   const { show } = useToast();
+  const { colors } = useEffectiveCatalog();
   const { data: ops, isLoading } = useOperations();
   const [pendingVoid, setPendingVoid] = useState<{ op: OperationRow; changes: Change[] } | null>(
     null,
@@ -55,14 +67,28 @@ export default function OperationsPanel() {
 
   async function saveEdit(text: string) {
     if (!editing) return;
-    const lines = parseLines(text)
-      .filter((l) => l.status === 'ok' && l.code && l.qty !== null)
-      .map((l) => ({ code: l.code as string, qty: l.qty as number }));
-    const res = await patchOp.mutateAsync({
-      seq: editing.seq,
-      type: editing.type,
-      payload: { raw: text, lines },
-    });
+    const set = scopeOf(editing);
+    const includeCustom = true;
+    const all = scopeCodes(colors, set, includeCustom);
+    const parsed = parseLines(text).filter((l) => l.status === 'ok' && l.code && l.qty !== null);
+
+    // Re-expand ALL against the operation's own scope, so editing the amount
+    // never silently changes which colours the operation touches.
+    const lines: { code: string; qty: number }[] = [];
+    let usesAll = false;
+    for (const l of parsed) {
+      if (isAllCode(l.code)) {
+        usesAll = true;
+        for (const c of all) lines.push({ code: c, qty: l.qty as number });
+      } else {
+        lines.push({ code: l.code as string, qty: l.qty as number });
+      }
+    }
+
+    const payload: Record<string, unknown> = { raw: text, lines };
+    if (usesAll) payload.scope = { kind: 'all', set, include_custom: includeCustom };
+
+    const res = await patchOp.mutateAsync({ seq: editing.seq, type: editing.type, payload });
     setEditing(null);
     show(formatChanges(res.changes));
   }
@@ -133,6 +159,7 @@ export default function OperationsPanel() {
       {editing && (
         <BatchDialog
           mode={editing.type === 'batch_add' ? 'add' : 'deduct'}
+          scopeSet={scopeOf(editing)}
           initialText={rawOf(editing)}
           onClose={() => setEditing(null)}
           onSubmit={saveEdit}
