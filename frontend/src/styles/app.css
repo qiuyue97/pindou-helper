@@ -72,7 +72,32 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .username { color: var(--muted); font-size: 0.9rem; }
 .section-h { display: flex; align-items: center; gap: 0.4rem; font-size: 1rem; margin: 1.6rem 0 0.5rem; }
 .section-h svg { color: var(--warn); }
-.threshold { width: 5rem; padding: 0.3rem; border: 1px solid var(--line); border-radius: 4px; }
+/* A setting, not an action — pushed to the far end of the toolbar and split
+   off from the buttons by a hairline. */
+.threshold-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--line);
+}
+.threshold-control label { color: var(--muted); font-size: 0.9rem; white-space: nowrap; }
+.threshold {
+  width: 5.5rem;
+  padding: 0.36rem 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font: inherit;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.threshold:focus { border-color: var(--accent); }
+
+@media (max-width: 860px) {
+  /* Wrapping onto its own row, the divider and auto-margin stop making sense. */
+  .threshold-control { margin-left: 0; padding-left: 0; border-left: 0; }
+}
 .toasts { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); display: grid; gap: 0.4rem; z-index: 50; }
 .toast { background: #24241f; color: #fff; padding: 0.5rem 0.9rem; border-radius: 6px; font-size: 0.9rem; }
 
