@@ -1,10 +1,34 @@
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useMemo, useState } from 'react';
 import { describe, expect, test } from 'vitest';
+import { selectCandidates, type CandidateSet } from '../color/match';
 import { AuthProvider } from '../state/AuthContext';
 import { ToastProvider } from '../state/ToastContext';
+import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
 import { mockFetch, renderWithProviders } from '../test/utils';
 import MatchPanel from './MatchPanel';
+
+/** Mirrors MatchPage, which owns the candidate-set state. */
+function Host({ hex }: { hex: string }) {
+  const [set, setSet] = useState<CandidateSet>('291');
+  const [includeCustom, setIncludeCustom] = useState(true);
+  const { colors } = useEffectiveCatalog();
+  const candidates = useMemo(
+    () => selectCandidates(colors, set, includeCustom),
+    [colors, set, includeCustom],
+  );
+  return (
+    <MatchPanel
+      hex={hex}
+      candidates={candidates}
+      set={set}
+      includeCustom={includeCustom}
+      onSetChange={setSet}
+      onIncludeCustomChange={setIncludeCustom}
+    />
+  );
+}
 
 const base = {
   'GET /api/auth/me': { body: { username: 'amy', threshold: 500 } },
@@ -20,7 +44,7 @@ const setup = (hex: string) =>
   renderWithProviders(
     <AuthProvider>
       <ToastProvider>
-        <MatchPanel hex={hex} />
+        <Host hex={hex} />
       </ToastProvider>
     </AuthProvider>,
   );

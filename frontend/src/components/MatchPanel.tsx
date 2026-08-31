@@ -1,25 +1,26 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import type { EffectiveColor } from '../color/catalog';
 import { useInventory } from '../api/hooks';
 import { hexToLab } from '../color/color';
-import {
-  buildIndex,
-  rankMatches,
-  selectCandidates,
-  verdict,
-  type CandidateSet,
-} from '../color/match';
-import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
+import { buildIndex, rankMatches, verdict, type CandidateSet } from '../color/match';
 
-export default function MatchPanel({ hex }: { hex: string }) {
-  const { colors } = useEffectiveCatalog();
+export default function MatchPanel({
+  hex,
+  candidates,
+  set,
+  includeCustom,
+  onSetChange,
+  onIncludeCustomChange,
+}: {
+  hex: string;
+  candidates: EffectiveColor[];
+  set: CandidateSet;
+  includeCustom: boolean;
+  onSetChange: (set: CandidateSet) => void;
+  onIncludeCustomChange: (include: boolean) => void;
+}) {
   const { data: inventory } = useInventory();
-  const [set, setSet] = useState<CandidateSet>('291');
-  const [includeCustom, setIncludeCustom] = useState(true);
 
-  const candidates = useMemo(
-    () => selectCandidates(colors, set, includeCustom),
-    [colors, set, includeCustom],
-  );
   // O(n^2) — keyed on candidates only, never on the sample.
   const index = useMemo(() => buildIndex(candidates), [candidates]);
   const ranked = useMemo(
@@ -43,7 +44,7 @@ export default function MatchPanel({ hex }: { hex: string }) {
                 type="radio"
                 name="candidate-set"
                 checked={set === s}
-                onChange={() => setSet(s)}
+                onChange={() => onSetChange(s)}
                 aria-label={s === '221' ? '221（A–M）' : '291（全部）'}
               />
               {s === '221' ? '221（A–M）' : '291（全部）'}
@@ -54,7 +55,7 @@ export default function MatchPanel({ hex }: { hex: string }) {
           <input
             type="checkbox"
             checked={includeCustom}
-            onChange={(e) => setIncludeCustom(e.target.checked)}
+            onChange={(e) => onIncludeCustomChange(e.target.checked)}
           />
           包含我的自定义色
         </label>
