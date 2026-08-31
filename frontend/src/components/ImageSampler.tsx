@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { rgbToHex } from '../color/color';
 import { displayToPixel, fitContain, loadBitmap, pixelAt } from '../lib/imageSample';
+import { loupePosition } from '../lib/loupe';
 
 const MAX_H = 420;
 const LOUPE = 120;
 const LOUPE_ZOOM = 8;
+/** Clearance between the crosshair and the magnifier. */
+const LOUPE_GAP = 16;
 
 export default function ImageSampler({
   onPreview,
@@ -22,7 +25,7 @@ export default function ImageSampler({
   const [zoom, setZoom] = useState(1);
   const [current, setCurrent] = useState<string | null>(null);
   const [frozen, setFrozen] = useState(false);
-  const [loupePos, setLoupePos] = useState<{ x: number; y: number } | null>(null);
+  const [loupeBox, setLoupeBox] = useState<{ left: number; top: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -47,7 +50,7 @@ export default function ImageSampler({
       setBitmap(await loadBitmap(file));
       setCurrent(null);
       setFrozen(false);
-      setLoupePos(null);
+      setLoupeBox(null);
     } catch {
       setBitmap(null);
     }
@@ -72,7 +75,9 @@ export default function ImageSampler({
     );
 
     const hex = rgbToHex(pixelAt(ctx.getImageData(x, y, 1, 1).data, 1, 0, 0));
-    setLoupePos({ x: px, y: py });
+    setLoupeBox(
+      loupePosition(px, py, { width: rect.width, height: rect.height }, LOUPE, LOUPE_GAP),
+    );
 
     const loupe = loupeRef.current;
     const lctx = loupe?.getContext('2d');
@@ -152,13 +157,13 @@ export default function ImageSampler({
           onPointerDown={onClick}
           onPointerMove={onMove}
         />
-        {loupePos && (
+        {loupeBox && (
           <canvas
             ref={loupeRef}
             className="loupe"
             width={LOUPE}
             height={LOUPE}
-            style={{ left: loupePos.x - LOUPE / 2, top: loupePos.y - 80 - LOUPE }}
+            style={{ left: loupeBox.left, top: loupeBox.top }}
           />
         )}
       </div>
