@@ -33,6 +33,15 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .toasts { position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%); display: grid; gap: 0.4rem; z-index: 50; }
 .toast { background: #24241f; color: #fff; padding: 0.5rem 0.9rem; border-radius: 6px; font-size: 0.9rem; }
 
+.swatch { display: inline-block; width: 1.5rem; height: 1.5rem; border-radius: 4px; border: 1px solid var(--line); vertical-align: middle; }
+.swatch[data-unknown='true'] { background: repeating-linear-gradient(45deg, #eee, #eee 4px, #fff 4px, #fff 8px); }
+.qty { background: none; border: 0; padding: 0.2rem 0.4rem; border-radius: 4px; font-variant-numeric: tabular-nums; }
+.qty-ok { color: var(--fg); }
+.qty-low { color: var(--warn); font-weight: 600; }
+.qty-negative { color: var(--danger); font-weight: 700; }
+.qty-input { width: 6rem; padding: 0.25rem; border: 1px solid var(--accent); border-radius: 4px; }
+.muted { color: var(--muted); font-size: 0.85rem; }
+
 @media (max-width: 640px) {
   .topbar { gap: 0.5rem; }
   .topbar-right { width: 100%; margin-left: 0; }
