@@ -45,8 +45,23 @@ def create_app() -> FastAPI:
         app.include_router(r, prefix="/api")
 
     if settings.static_dir:
-        from fastapi.staticfiles import StaticFiles
-
-        app.mount("/", StaticFiles(directory=settings.static_dir, html=True), name="spa")
+        app.mount("/", _spa_files(settings.static_dir), name="spa")
 
     return app
+
+
+def _spa_files(directory: str):
+    """StaticFiles that falls back to index.html on any 404 (client-side routing)."""
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from starlette.staticfiles import StaticFiles
+
+    class SPAStaticFiles(StaticFiles):
+        async def get_response(self, path: str, scope):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code == 404:
+                    return await super().get_response("index.html", scope)
+                raise
+
+    return SPAStaticFiles(directory=directory, html=True)
