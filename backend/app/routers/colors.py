@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
@@ -61,7 +61,7 @@ def set_color(
     session: Session = Depends(get_session),
 ) -> ColorRow:
     existing = _find(session, user.id, code)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if code in BASE_CODES:
         if existing:
             existing.hex = body.hex

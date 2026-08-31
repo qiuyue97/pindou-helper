@@ -30,9 +30,9 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def csrf_guard(request: Request, call_next):
-        if request.method not in SAFE_METHODS and request.url.path.startswith("/api/"):
-            if request.headers.get("x-requested-with") != "pindou":
-                return JSONResponse({"detail": "missing X-Requested-With"}, status_code=403)
+        mutating_api = request.method not in SAFE_METHODS and request.url.path.startswith("/api/")
+        if mutating_api and request.headers.get("x-requested-with") != "pindou":
+            return JSONResponse({"detail": "missing X-Requested-With"}, status_code=403)
         return await call_next(request)
 
     @app.get("/api/health")

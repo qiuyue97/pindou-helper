@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
@@ -131,7 +131,7 @@ def patch_operation(
             raise HTTPException(status_code=422, detail=f"unknown colour code(s): {sorted(bad)}")
     op.type = new_type
     op.payload = body.payload
-    op.edited_at = datetime.now(timezone.utc)
+    op.edited_at = datetime.now(UTC)
     diff = rematerialize(session, user.id)
     session.commit()
     return _changes_out(diff)

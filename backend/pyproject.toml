@@ -23,6 +23,12 @@ testpaths = ["tests"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+ignore = ["B008"]  # Depends()/Query() in arg defaults is the FastAPI idiom
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"

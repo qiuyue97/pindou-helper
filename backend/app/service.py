@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -8,7 +8,7 @@ from app.replay import ReplayOp, diff_inventory, referenced_codes, replay
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _replay_ops(session: Session, user_id: int) -> list[ReplayOp]:
