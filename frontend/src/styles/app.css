@@ -88,3 +88,9 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .channels { display: flex; gap: 0.5rem; }
 .channels span { display: grid; gap: 0.15rem; }
 .channels input { width: 5rem; }
+.sampler { display: grid; gap: 0.4rem; }
+.canvas-wrap { position: relative; overflow: auto; max-height: 460px; }
+.canvas-wrap canvas { display: block; cursor: crosshair; }
+.loupe { position: absolute; width: 120px; height: 120px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); pointer-events: none; }
+.sampler-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.sampler-controls button { padding: 0.35rem 0.8rem; border: 1px solid var(--line); background: #fff; border-radius: 5px; }
