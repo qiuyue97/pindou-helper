@@ -58,6 +58,9 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .preview tbody tr { cursor: pointer; }
 .preview tbody tr:hover { background: #f6f6f3; }
 .preview tr.bad td { color: var(--danger); }
+.stockout { margin-top: 1.5rem; display: grid; gap: 0.4rem; max-width: 34rem; }
+.stockout textarea { padding: 0.4rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+.stockout button { justify-self: start; padding: 0.35rem 0.8rem; border: 1px solid var(--line); background: #fff; border-radius: 5px; }
 
 @media (max-width: 640px) {
   .topbar { gap: 0.5rem; }
