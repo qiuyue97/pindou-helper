@@ -141,3 +141,7 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   .inv-col { min-width: 52px; }
   .inv-block, .inv-qty { font-size: 0.65rem; }
 }
+.plane-wrap { position: relative; }
+.point-label { position: absolute; pointer-events: none; background: #24241f; color: #fff; font-size: 0.72rem; padding: 1px 5px; border-radius: 3px; white-space: nowrap; z-index: 2; }
+.space2d-controls, .space3d-controls { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; font-size: 0.85rem; }
+.space2d-controls button { padding: 0.25rem 0.6rem; border: 1px solid var(--line); background: #fff; border-radius: 5px; }

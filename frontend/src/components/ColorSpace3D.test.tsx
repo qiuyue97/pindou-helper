@@ -22,4 +22,9 @@ describe('ColorSpace3D', () => {
     await userEvent.click(screen.getByRole('button', { name: '重置视角' }));
     expect(readout).toHaveTextContent('35');
   });
+
+  test('tells the user hovering reveals the code', () => {
+    renderWithProviders(<ColorSpace3D sampleHex="7F7F7F" candidates={candidates} />);
+    expect(screen.getByText(/悬停看色号/)).toBeInTheDocument();
+  });
 });

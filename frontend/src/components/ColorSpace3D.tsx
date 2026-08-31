@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointer
 import type { EffectiveColor } from '../color/catalog';
 import { deltaE00, hexToLab } from '../color/color';
 import { project3d, selectPlotSet } from '../color/neighbors';
+import { nearestPoint, type ScreenPoint } from '../lib/hitTest';
 import { orbitScale } from '../lib/plotGeometry';
 
 const SIZE = 320;
@@ -17,8 +18,10 @@ export default function ColorSpace3D({
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const hits = useRef<ScreenPoint[]>([]);
   const [az, setAz] = useState(DEFAULT_AZ);
   const [el, setEl] = useState(DEFAULT_EL);
+  const [hover, setHover] = useState<{ code: string; x: number; y: number } | null>(null);
 
   const sampleLab = useMemo(() => hexToLab(sampleHex), [sampleHex]);
   const plot = useMemo(
@@ -32,8 +35,8 @@ export default function ColorSpace3D({
     if (!canvas || !ctx) return;
 
     const nodes = [
-      ...plot.map((c) => ({ hex: c.hex, lab: c.lab, sample: false })),
-      { hex: sampleHex, lab: sampleLab, sample: true },
+      ...plot.map((c) => ({ code: c.code, hex: c.hex, lab: c.lab, sample: false })),
+      { code: '', hex: sampleHex, lab: sampleLab, sample: true },
     ].map((n) => ({ ...n, p: project3d(n.lab, az, el) }));
 
     const scale = orbitScale(
@@ -63,8 +66,10 @@ export default function ColorSpace3D({
       ctx.stroke();
     }
 
+    const found: ScreenPoint[] = [];
     for (const n of [...nodes].sort((a, b) => a.p.depth - b.p.depth)) {
       const pt = scale.toScreen(n.p);
+      if (!n.sample) found.push({ code: n.code, x: pt.x, y: pt.y });
       const r = (n.sample ? 8 : 5) + 4 * norm(n.p.depth);
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
@@ -74,6 +79,7 @@ export default function ColorSpace3D({
       ctx.lineWidth = n.sample ? 3 : 1;
       ctx.stroke();
     }
+    hits.current = found;
   }, [sampleHex, sampleLab, plot, az, el]);
 
   function onDown(e: ReactPointerEvent<HTMLCanvasElement>) {
@@ -82,10 +88,16 @@ export default function ColorSpace3D({
   }
   function onMove(e: ReactPointerEvent<HTMLCanvasElement>) {
     const d = drag.current;
-    if (!d) return;
-    setAz((a) => a + (e.clientX - d.x) * 0.5);
-    setEl((v) => Math.min(80, Math.max(-80, v - (e.clientY - d.y) * 0.5)));
-    drag.current = { x: e.clientX, y: e.clientY };
+    if (d) {
+      setAz((a) => a + (e.clientX - d.x) * 0.5);
+      setEl((v) => Math.min(80, Math.max(-80, v - (e.clientY - d.y) * 0.5)));
+      drag.current = { x: e.clientX, y: e.clientY };
+      setHover(null);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const hit = nearestPoint(hits.current, e.clientX - rect.left, e.clientY - rect.top, 12);
+    setHover(hit ? { code: hit.code, x: hit.x, y: hit.y } : null);
   }
   const onUp = () => {
     drag.current = null;
@@ -93,17 +105,32 @@ export default function ColorSpace3D({
 
   return (
     <div className="space3d">
-      <canvas
-        ref={ref}
-        width={SIZE}
-        height={SIZE}
-        aria-label="CIELAB 三维视图"
-        style={{ touchAction: 'none', cursor: 'grab' }}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
-      />
+      <div className="plane-wrap">
+        <canvas
+          ref={ref}
+          width={SIZE}
+          height={SIZE}
+          aria-label="CIELAB 三维视图"
+          style={{ touchAction: 'none', cursor: 'grab' }}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={onUp}
+          onPointerLeave={() => {
+            onUp();
+            setHover(null);
+          }}
+        />
+        {hover && (
+          <span
+            className="point-label"
+            role="tooltip"
+            style={{ left: hover.x + 12, top: hover.y - 10 }}
+          >
+            {hover.code}
+          </span>
+        )}
+      </div>
       <div className="space3d-controls">
         <span className="muted" data-testid="view-angles">
           方位 {Math.round(az)}° / 俯仰 {Math.round(el)}°
@@ -117,6 +144,7 @@ export default function ColorSpace3D({
         >
           重置视角
         </button>
+        <span className="muted">拖拽旋转，悬停看色号</span>
       </div>
     </div>
   );

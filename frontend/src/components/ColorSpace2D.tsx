@@ -1,11 +1,21 @@
-import { useEffect, useMemo, useRef } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type WheelEvent as ReactWheelEvent,
+} from 'react';
 import type { EffectiveColor } from '../color/catalog';
 import { deltaE00, hexToLab, type Lab } from '../color/color';
 import { selectPlotSet } from '../color/neighbors';
+import { nearestPoint, type ScreenPoint } from '../lib/hitTest';
 import { lightnessScale, planeScale } from '../lib/plotGeometry';
 
 const PLANE = 280;
 const STRIP_W = 60;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 8;
 
 export default function ColorSpace2D({
   sampleHex,
@@ -16,12 +26,23 @@ export default function ColorSpace2D({
 }) {
   const planeRef = useRef<HTMLCanvasElement>(null);
   const stripRef = useRef<HTMLCanvasElement>(null);
+  const hits = useRef<ScreenPoint[]>([]);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [hover, setHover] = useState<{ code: string; x: number; y: number } | null>(null);
 
   const sampleLab = useMemo(() => hexToLab(sampleHex), [sampleHex]);
   const plot = useMemo(
     () => selectPlotSet(sampleLab, candidates, { topK: 5, perAxis: 3, cap: 12 }),
     [sampleLab, candidates],
   );
+
+  const reset = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
 
   useEffect(() => {
     const canvas = planeRef.current;
@@ -30,26 +51,37 @@ export default function ColorSpace2D({
 
     const box = { width: PLANE, height: PLANE, pad: 24 };
     const labs: Lab[] = [sampleLab, ...plot.map((c) => c.lab)];
-    const scale = planeScale(labs, box);
+    const base = planeScale(labs, box);
+    const cx = PLANE / 2;
+    const cy = PLANE / 2;
+    // Zoom/pan about the canvas centre.
+    const toScreen = (lab: Lab) => {
+      const p = base.toScreen(lab);
+      return { x: cx + (p.x - cx) * zoom + pan.x, y: cy + (p.y - cy) * zoom + pan.y };
+    };
 
     ctx.clearRect(0, 0, PLANE, PLANE);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, PLANE, PLANE);
+    ctx.clip();
 
-    const origin = scale.toScreen([50, 0, 0]);
+    const origin = toScreen([50, 0, 0]);
     ctx.strokeStyle = '#e3e3df';
     ctx.lineWidth = 1;
     for (const f of [0.25, 0.5, 0.75, 1]) {
       ctx.beginPath();
-      ctx.arc(origin.x, origin.y, (PLANE / 2 - box.pad) * f, 0, Math.PI * 2);
+      ctx.arc(origin.x, origin.y, (PLANE / 2 - box.pad) * f * zoom, 0, Math.PI * 2);
       ctx.stroke();
     }
     ctx.beginPath();
-    ctx.moveTo(box.pad, origin.y);
-    ctx.lineTo(PLANE - box.pad, origin.y);
-    ctx.moveTo(origin.x, box.pad);
-    ctx.lineTo(origin.x, PLANE - box.pad);
+    ctx.moveTo(0, origin.y);
+    ctx.lineTo(PLANE, origin.y);
+    ctx.moveTo(origin.x, 0);
+    ctx.lineTo(origin.x, PLANE);
     ctx.stroke();
 
-    const s = scale.toScreen(sampleLab);
+    const s = toScreen(sampleLab);
 
     const nearest = [...plot]
       .sort((a, b) => deltaE00(sampleLab, a.lab) - deltaE00(sampleLab, b.lab))
@@ -58,7 +90,7 @@ export default function ColorSpace2D({
     ctx.fillStyle = '#6b6b66';
     ctx.font = '11px system-ui, sans-serif';
     for (const c of nearest) {
-      const p = scale.toScreen(c.lab);
+      const p = toScreen(c.lab);
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(p.x, p.y);
@@ -66,8 +98,10 @@ export default function ColorSpace2D({
       ctx.fillText(deltaE00(sampleLab, c.lab).toFixed(1), (s.x + p.x) / 2 + 3, (s.y + p.y) / 2 - 3);
     }
 
+    const found: ScreenPoint[] = [];
     for (const c of plot) {
-      const p = scale.toScreen(c.lab);
+      const p = toScreen(c.lab);
+      found.push({ code: c.code, x: p.x, y: p.y });
       ctx.beginPath();
       ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
       ctx.fillStyle = `#${c.hex}`;
@@ -76,6 +110,7 @@ export default function ColorSpace2D({
       ctx.lineWidth = 1;
       ctx.stroke();
     }
+    hits.current = found;
 
     ctx.beginPath();
     ctx.arc(s.x, s.y, 10, 0, Math.PI * 2);
@@ -84,7 +119,8 @@ export default function ColorSpace2D({
     ctx.strokeStyle = '#1c1c1a';
     ctx.lineWidth = 3;
     ctx.stroke();
-  }, [sampleHex, sampleLab, plot]);
+    ctx.restore();
+  }, [sampleHex, sampleLab, plot, zoom, pan]);
 
   useEffect(() => {
     const canvas = stripRef.current;
@@ -118,12 +154,79 @@ export default function ColorSpace2D({
     ctx.strokeRect(STRIP_W / 2 - 14, y - 4, 28, 8);
   }, [sampleHex, sampleLab, plot]);
 
+  function onMove(e: ReactPointerEvent<HTMLCanvasElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    const d = drag.current;
+    if (d) {
+      setPan((p) => ({ x: p.x + (e.clientX - d.x), y: p.y + (e.clientY - d.y) }));
+      drag.current = { x: e.clientX, y: e.clientY };
+      return;
+    }
+    const hit = nearestPoint(hits.current, x, y, 12);
+    setHover(hit ? { code: hit.code, x: hit.x, y: hit.y } : null);
+  }
+
+  function onWheel(e: ReactWheelEvent<HTMLCanvasElement>) {
+    const next = e.deltaY < 0 ? zoom * 1.2 : zoom / 1.2;
+    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)));
+  }
+
   return (
     <div className="space2d">
       <div className="canvases">
-        <canvas ref={planeRef} width={PLANE} height={PLANE} aria-label="a*–b* 平面" />
+        <div className="plane-wrap">
+          <canvas
+            ref={planeRef}
+            width={PLANE}
+            height={PLANE}
+            aria-label="a*–b* 平面"
+            style={{ touchAction: 'none', cursor: drag.current ? 'grabbing' : 'crosshair' }}
+            onPointerDown={(e) => {
+              drag.current = { x: e.clientX, y: e.clientY };
+              e.currentTarget.setPointerCapture(e.pointerId);
+            }}
+            onPointerMove={onMove}
+            onPointerUp={() => {
+              drag.current = null;
+            }}
+            onPointerLeave={() => {
+              drag.current = null;
+              setHover(null);
+            }}
+            onWheel={onWheel}
+          />
+          {hover && (
+            <span
+              className="point-label"
+              role="tooltip"
+              style={{ left: hover.x + 12, top: hover.y - 10 }}
+            >
+              {hover.code}
+            </span>
+          )}
+        </div>
         <canvas ref={stripRef} width={STRIP_W} height={PLANE} aria-label="L* 明度" />
       </div>
+
+      <div className="space2d-controls">
+        <button type="button" onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.4))}>
+          放大
+        </button>
+        <button type="button" onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.4))}>
+          缩小
+        </button>
+        <button type="button" onClick={reset}>
+          重置视图
+        </button>
+        <span className="muted" data-testid="plane-zoom">
+          {zoom.toFixed(1)}×
+        </span>
+        <span className="muted">滚轮缩放，拖拽平移，悬停看色号</span>
+      </div>
+
       <ul className="legend" aria-label="图中色号">
         {plot.map((c) => (
           <li key={c.code}>
