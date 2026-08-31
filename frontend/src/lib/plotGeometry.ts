@@ -47,3 +47,31 @@ export function orbitScale(projected: { x: number; y: number }[], box: Box) {
     },
   };
 }
+
+/**
+ * Walk from `from` towards `to` and stop at the last point still inside the box
+ * shrunk by `inset`. Used to keep axis labels on screen when the plot is zoomed
+ * past the canvas edge — the label slides along its own axis instead of
+ * disappearing. Returns `to` unchanged when it is already inside.
+ */
+export function clampSegmentToBox(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  box: Box,
+  inset: number,
+): { x: number; y: number } {
+  const lo = { x: inset, y: inset };
+  const hi = { x: box.width - inset, y: box.height - inset };
+  const d = { x: to.x - from.x, y: to.y - from.y };
+
+  let tMax = 1;
+  for (const axis of ['x', 'y'] as const) {
+    const delta = d[axis];
+    if (Math.abs(delta) < 1e-9) continue; // parallel to this pair of edges
+    const t1 = (lo[axis] - from[axis]) / delta;
+    const t2 = (hi[axis] - from[axis]) / delta;
+    tMax = Math.min(tMax, Math.max(t1, t2));
+  }
+  const t = Math.min(1, Math.max(0, tMax));
+  return { x: from.x + d.x * t, y: from.y + d.y * t };
+}

@@ -3,7 +3,7 @@ import type { EffectiveColor } from '../color/catalog';
 import { deltaE00, hexToLab, type Lab } from '../color/color';
 import { project3d, selectPlotSet } from '../color/neighbors';
 import { nearestPoint, type ScreenPoint } from '../lib/hitTest';
-import { orbitScale } from '../lib/plotGeometry';
+import { clampSegmentToBox, orbitScale } from '../lib/plotGeometry';
 
 const SIZE = 320;
 const DEFAULT_AZ = 35;
@@ -72,7 +72,11 @@ export default function ColorSpace3D({
       ['a*', [50, -AXIS, 0], [50, AXIS, 0]],
       ['b*', [50, 0, -AXIS], [50, 0, AXIS]],
     ];
+    const centre = scale.toScreen(project3d([50, 0, 0], az, el));
+    const viewport = { width: SIZE, height: SIZE, pad: 0 };
     ctx.font = '11px system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+
     for (const [label, from, to] of axes) {
       const a = scale.toScreen(project3d(from as Lab, az, el));
       const b = scale.toScreen(project3d(to as Lab, az, el));
@@ -82,9 +86,24 @@ export default function ColorSpace3D({
       ctx.moveTo(a.x, a.y);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
-      ctx.fillStyle = '#9a9a94';
-      ctx.fillText(label, b.x + 3, b.y - 3);
+
+      // Slide the label along its own axis so zooming never pushes it off-canvas.
+      const w = ctx.measureText(label).width;
+      const anchor = clampSegmentToBox(centre, b, viewport, 14);
+      const pointsRight = b.x >= centre.x;
+      const x = Math.min(
+        SIZE - w - 3,
+        Math.max(3, pointsRight ? anchor.x + 5 : anchor.x - w - 5),
+      );
+      const y = Math.min(SIZE - 8, Math.max(8, anchor.y));
+
+      // A chip behind the text keeps it readable when it lands on a data point.
+      ctx.fillStyle = 'rgba(253, 253, 252, 0.85)';
+      ctx.fillRect(x - 2, y - 7, w + 4, 14);
+      ctx.fillStyle = '#6b6b66';
+      ctx.fillText(label, x, y);
     }
+    ctx.textBaseline = 'alphabetic';
 
     const sample = nodes[nodes.length - 1]!;
     const sPt = scale.toScreen(sample.p);
