@@ -146,3 +146,48 @@ class ImpactIn(BaseModel):
     mode: Literal["void", "edit"]
     type: str | None = None
     payload: dict | None = None
+
+
+_COLOR_CODE_RE = re.compile(r"^[A-Z0-9_-]{1,12}$")
+_HEX_RE = re.compile(r"^[0-9A-F]{6}$")
+
+
+def _norm_hex(v: str) -> str:
+    v = v.strip().lstrip("#").upper()
+    if not _HEX_RE.match(v):
+        raise ValueError("hex must be 6 hex digits")
+    return v
+
+
+class ColorRow(BaseModel):
+    code: str
+    hex: str
+    source: str
+    base_hex: str | None = None
+
+
+class ColorIn(BaseModel):
+    code: str
+    hex: str
+
+    @field_validator("code")
+    @classmethod
+    def _code(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not _COLOR_CODE_RE.match(v):
+            raise ValueError("code must be 1-12 chars [A-Z0-9_-]")
+        return v
+
+    @field_validator("hex")
+    @classmethod
+    def _hex(cls, v: str) -> str:
+        return _norm_hex(v)
+
+
+class ColorHexIn(BaseModel):
+    hex: str
+
+    @field_validator("hex")
+    @classmethod
+    def _hex(cls, v: str) -> str:
+        return _norm_hex(v)
