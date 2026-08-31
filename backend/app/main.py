@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.config import get_settings
+from app.config import DEV_INSECURE_SECRET, get_settings
 from app.db import init_db
 
 log = logging.getLogger("pindou")
@@ -13,7 +13,7 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    if settings.jwt_secret == "dev-insecure-change-me":
+    if settings.jwt_secret == DEV_INSECURE_SECRET:
         log.warning("PINDOU_JWT_SECRET is the insecure default — set it in production")
 
     init_db()

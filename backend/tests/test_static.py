@@ -1,6 +1,8 @@
 import pytest
 from starlette.testclient import TestClient
 
+from tests.conftest import TEST_JWT_SECRET
+
 
 @pytest.fixture()
 def spa_app(tmp_path, monkeypatch):
@@ -9,7 +11,7 @@ def spa_app(tmp_path, monkeypatch):
     (static / "index.html").write_text("<!doctype html><title>pindou</title>", encoding="utf-8")
 
     monkeypatch.setenv("PINDOU_DB_URL", f"sqlite:///{(tmp_path / 't.db').as_posix()}")
-    monkeypatch.setenv("PINDOU_JWT_SECRET", "test-secret")
+    monkeypatch.setenv("PINDOU_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("PINDOU_STATIC_DIR", str(static))
 
     from app.config import get_settings

@@ -3,11 +3,14 @@ from starlette.testclient import TestClient
 
 XRW = {"X-Requested-With": "pindou"}
 
+# >= 32 bytes, so HS256 signing stays clear of the RFC 7518 §3.2 warning.
+TEST_JWT_SECRET = "test-secret-for-pytest-only-0123456789"
+
 
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv("PINDOU_DB_URL", f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
-    monkeypatch.setenv("PINDOU_JWT_SECRET", "test-secret")
+    monkeypatch.setenv("PINDOU_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("PINDOU_CORS_ORIGINS", "http://testserver")
 
     from app.config import get_settings
