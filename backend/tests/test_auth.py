@@ -43,8 +43,8 @@ def test_register_conflict(client):
 
 
 def test_login_bad_password(client):
-    client.post("/api/auth/register", json={"username": "cy", "password": "password123"}, headers=XRW)
-    r = client.post("/api/auth/login", json={"username": "cy", "password": "nope"}, headers=XRW)
+    client.post("/api/auth/register", json={"username": "carol", "password": "password123"}, headers=XRW)
+    r = client.post("/api/auth/login", json={"username": "carol", "password": "nope"}, headers=XRW)
     assert r.status_code == 401
 
 

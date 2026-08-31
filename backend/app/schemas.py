@@ -1,6 +1,7 @@
 import re
+from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_-]{3,32}$")
 
@@ -47,3 +48,25 @@ class SettingsIn(BaseModel):
 
 class SettingsOut(BaseModel):
     threshold: int
+
+
+class InventoryRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    code: str
+    quantity: int
+    updated_at: datetime
+
+
+class QuantityIn(BaseModel):
+    quantity: int
+
+
+class ChangeRow(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    code: str
+    from_: int | None = Field(serialization_alias="from")
+    to: int | None
+
+
+class ChangesOut(BaseModel):
+    changes: list[ChangeRow]
