@@ -1,12 +1,24 @@
 services:
   pindou:
     build: .
+    image: pindou-helper:latest
+    container_name: pindou-helper
     ports:
+      # Change the left-hand port if 8000 is taken on your NAS.
       - "8000:8000"
     environment:
-      PINDOU_JWT_SECRET: ${PINDOU_JWT_SECRET:?set a long random secret in .env}
-      PINDOU_COOKIE_SECURE: "0"
+      # Required. Sessions are signed with this — changing it logs everyone out.
+      PINDOU_JWT_SECRET: ${PINDOU_JWT_SECRET:?set PINDOU_JWT_SECRET in .env}
+      # Keep "0" when you reach the NAS over plain http:// on the LAN.
+      # Set to "1" only when it is served over https:// (e.g. behind a reverse proxy),
+      # otherwise the browser will refuse to store the session cookie and you
+      # will be logged out on every request.
+      PINDOU_COOKIE_SECURE: ${PINDOU_COOKIE_SECURE:-0}
+      # Affects server log timestamps. The UI renders times in the browser's
+      # own timezone, so this does not change what you see in the app.
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
+      # SQLite lives here. Back this up and you have backed up everything.
       - pindou-data:/data
     restart: unless-stopped
 

@@ -33,5 +33,14 @@ extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "f
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+# catalog.json is the 291-colour source of truth and is read via
+# Path(__file__).with_name(). Without this it is silently dropped from the
+# wheel and the app dies at import time with FileNotFoundError.
+include-package-data = true
+
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["*.json"]
