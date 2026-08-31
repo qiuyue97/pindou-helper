@@ -1,5 +1,6 @@
 import { History, LogOut, Palette, SwatchBook, Boxes } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { greetingFor } from '../lib/greeting';
 import { useAuth } from '../state/AuthContext';
 
 const TABS = [
@@ -25,6 +26,7 @@ export default function AppShell() {
           ))}
         </nav>
         <div className="topbar-right">
+          <span className="greeting">{greetingFor()}，</span>
           <span className="username">{me?.username}</span>
           <button type="button" className="ghost" onClick={() => void logout()}>
             <LogOut size={15} aria-hidden="true" />

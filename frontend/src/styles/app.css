@@ -69,7 +69,8 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .topbar nav a:hover { background: #f0f0ec; color: var(--fg); }
 .topbar nav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.username { color: var(--muted); font-size: 0.9rem; }
+.greeting { color: var(--muted); font-size: 0.9rem; }
+.username { color: var(--fg); font-size: 0.9rem; font-weight: 600; margin-left: -0.25rem; }
 .section-h { display: flex; align-items: center; gap: 0.4rem; font-size: 1rem; margin: 1.6rem 0 0.5rem; }
 .section-h svg { color: var(--warn); }
 /* A setting, not an action — pushed to the far end of the toolbar and split
