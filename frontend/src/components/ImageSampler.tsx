@@ -140,11 +140,15 @@ export default function ImageSampler({
   return (
     <div className="sampler" ref={wrapRef}>
       <label htmlFor="pick-file">上传图片</label>
+      {/*
+        不要加 capture 属性。iOS Safari 一见到它就直接拉起相机，用户拿不到
+        「照片图库 / 拍照 / 选取文件」那张操作表，相册里已有的图片就选不了。
+        只留 accept="image/*"，iOS 才会给出完整的三个选项。
+      */}
       <input
         id="pick-file"
         type="file"
         accept="image/*"
-        capture="environment"
         onChange={(e) => void onFile(e.target.files?.[0])}
       />
 

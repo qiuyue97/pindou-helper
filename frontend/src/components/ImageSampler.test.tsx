@@ -18,12 +18,15 @@ describe('ImageSampler', () => {
     expect(screen.getByRole('button', { name: '取此点' })).toBeDisabled();
   });
 
-  test('exposes a camera-capable file input', () => {
+  test('accepts any image without forcing the camera', () => {
     setup();
     const input = screen.getByLabelText('上传图片');
     expect(input).toHaveAttribute('type', 'file');
     expect(input).toHaveAttribute('accept', 'image/*');
-    expect(input).toHaveAttribute('capture', 'environment');
+    // `capture` must stay off: iOS Safari treats it as "open the camera now"
+    // and never offers the photo library, which makes existing images
+    // unpickable. Its absence is the whole fix, so assert it explicitly.
+    expect(input).not.toHaveAttribute('capture');
   });
 
   test('renders zoom controls that are safe with no image loaded', async () => {
