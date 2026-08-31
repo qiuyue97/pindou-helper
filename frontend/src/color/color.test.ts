@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, test, expect } from 'vitest';
-import { hexToRgb, rgbToHex, hexToLab } from './color';
+import { hexToRgb, rgbToHex, hexToLab, deltaE76, deltaE00 } from './color';
 
 const closeTo = (got: number[], want: number[], eps: number) =>
   got.forEach((v, i) => expect(Math.abs(v - want[i]!)).toBeLessThanOrEqual(eps));
@@ -32,5 +35,35 @@ describe('hex -> CIELAB (D65)', () => {
     expect(L).toBeGreaterThan(50);
     expect(L).toBeLessThan(56);
     closeTo([a, b], [0, 0], 0.02);
+  });
+});
+
+describe('deltaE76', () => {
+  test('is plain Lab Euclidean distance', () => {
+    expect(deltaE76([50, 0, 0], [50, 3, 4])).toBeCloseTo(5, 10);
+  });
+});
+
+describe('deltaE00 vs Sharma reference dataset', () => {
+  const rows = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '__fixtures__/ciede2000-sharma.csv'),
+    'utf8',
+  )
+    .trim()
+    .split(/\r?\n/)
+    .slice(1);
+
+  for (const row of rows) {
+    test(`pair ${row}`, () => {
+      const [L1, a1, b1, L2, a2, b2, want] = row.split(',').map(Number);
+      const got = deltaE00([L1!, a1!, b1!], [L2!, a2!, b2!]);
+      expect(Math.abs(got - want!)).toBeLessThan(1e-4);
+    });
+  }
+
+  test('is symmetric', () => {
+    const p: [number, number, number] = [40, 12, -5];
+    const q: [number, number, number] = [45, -3, 20];
+    expect(Math.abs(deltaE00(p, q) - deltaE00(q, p))).toBeLessThan(1e-9);
   });
 });
