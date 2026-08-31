@@ -119,3 +119,6 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .space3d canvas { border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 .space3d-controls { display: flex; align-items: center; gap: 0.6rem; }
 .space3d-controls button { padding: 0.3rem 0.7rem; border: 1px solid var(--line); background: #fff; border-radius: 5px; }
+.colors-page { display: grid; gap: 0.8rem; }
+.colors-page input[type="search"] { max-width: 16rem; padding: 0.4rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+.source-tag { font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 999px; background: #eee; color: var(--muted); }

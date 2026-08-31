@@ -3,6 +3,7 @@ import AppShell from './components/AppShell';
 import LoginForm from './components/LoginForm';
 import HistoryPage from './routes/HistoryPage';
 import MatchPage from './routes/MatchPage';
+import MyColorsPage from './routes/MyColorsPage';
 import InventoryPage from './routes/InventoryPage';
 import { useAuth } from './state/AuthContext';
 
@@ -17,6 +18,7 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<InventoryPage />} />
         <Route path="match" element={<MatchPage />} />
+        <Route path="colors" element={<MyColorsPage />} />
         <Route path="history" element={<HistoryPage />} />
       </Route>
     </Routes>
