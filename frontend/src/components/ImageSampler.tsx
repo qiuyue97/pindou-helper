@@ -6,13 +6,22 @@ const MAX_H = 420;
 const LOUPE = 120;
 const LOUPE_ZOOM = 8;
 
-export default function ImageSampler({ onPick }: { onPick: (hex: string) => void }) {
+export default function ImageSampler({
+  onPreview,
+  onCommit,
+}: {
+  /** Fires continuously while the pointer moves over the image (unless frozen). */
+  onPreview: (hex: string) => void;
+  /** Fires only when the user presses 取此点. */
+  onCommit: (hex: string) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const loupeRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [bitmap, setBitmap] = useState<ImageBitmap | null>(null);
   const [zoom, setZoom] = useState(1);
-  const [tentative, setTentative] = useState<string | null>(null);
+  const [current, setCurrent] = useState<string | null>(null);
+  const [frozen, setFrozen] = useState(false);
   const [loupePos, setLoupePos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -36,18 +45,20 @@ export default function ImageSampler({ onPick }: { onPick: (hex: string) => void
     if (!file) return;
     try {
       setBitmap(await loadBitmap(file));
-      setTentative(null);
+      setCurrent(null);
+      setFrozen(false);
       setLoupePos(null);
     } catch {
       setBitmap(null);
     }
   }
 
-  function sampleAt(e: ReactPointerEvent<HTMLCanvasElement>) {
+  /** Read the pixel under the pointer and paint the loupe. */
+  function readAt(e: ReactPointerEvent<HTMLCanvasElement>): string | null {
     const canvas = canvasRef.current;
-    if (!canvas || !bitmap) return;
+    if (!canvas || !bitmap) return null;
     const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    if (!ctx) return null;
 
     const rect = canvas.getBoundingClientRect();
     const px = e.clientX - rect.left;
@@ -60,8 +71,7 @@ export default function ImageSampler({ onPick }: { onPick: (hex: string) => void
       { width: canvas.width, height: canvas.height },
     );
 
-    const img = ctx.getImageData(x, y, 1, 1);
-    setTentative(rgbToHex(pixelAt(img.data, 1, 0, 0)));
+    const hex = rgbToHex(pixelAt(ctx.getImageData(x, y, 1, 1).data, 1, 0, 0));
     setLoupePos({ x: px, y: py });
 
     const loupe = loupeRef.current;
@@ -90,6 +100,35 @@ export default function ImageSampler({ onPick }: { onPick: (hex: string) => void
       lctx.lineTo(LOUPE, LOUPE / 2);
       lctx.stroke();
     }
+    return hex;
+  }
+
+  function onMove(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (frozen) return; // locked in by a click — ignore further movement
+    const hex = readAt(e);
+    if (hex) {
+      setCurrent(hex);
+      onPreview(hex);
+    }
+  }
+
+  /** Click toggles the freeze: lock the current pixel, or resume following. */
+  function onClick(e: ReactPointerEvent<HTMLCanvasElement>) {
+    if (frozen) {
+      setFrozen(false);
+      const hex = readAt(e);
+      if (hex) {
+        setCurrent(hex);
+        onPreview(hex);
+      }
+      return;
+    }
+    const hex = readAt(e);
+    if (hex) {
+      setCurrent(hex);
+      onPreview(hex);
+    }
+    setFrozen(true);
   }
 
   return (
@@ -103,17 +142,15 @@ export default function ImageSampler({ onPick }: { onPick: (hex: string) => void
         onChange={(e) => void onFile(e.target.files?.[0])}
       />
 
-      {!bitmap && <p className="muted">选择或拍一张照片，然后点图片取色。</p>}
+      {!bitmap && <p className="muted">选择或拍一张照片，鼠标滑过即可取色。</p>}
 
       <div className="canvas-wrap">
         <canvas
           ref={canvasRef}
           aria-label="图片取色"
           style={{ touchAction: 'none' }}
-          onPointerDown={sampleAt}
-          onPointerMove={(e) => {
-            if (e.buttons > 0 || e.pointerType === 'touch') sampleAt(e);
-          }}
+          onPointerDown={onClick}
+          onPointerMove={onMove}
         />
         {loupePos && (
           <canvas
@@ -126,6 +163,10 @@ export default function ImageSampler({ onPick }: { onPick: (hex: string) => void
         )}
       </div>
 
+      <p className="muted" data-testid="sampler-hint">
+        {frozen ? '已锁定，再次点击图片可继续跟随鼠标' : '滑过图片实时预览，左键点击锁定'}
+      </p>
+
       <div className="sampler-controls">
         <button type="button" onClick={() => setZoom((z) => Math.min(4, z * 1.5))}>
           放大
@@ -133,14 +174,14 @@ export default function ImageSampler({ onPick }: { onPick: (hex: string) => void
         <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))}>
           缩小
         </button>
-        {tentative && (
-          <span className="swatch" style={{ background: `#${tentative}` }} aria-hidden="true" />
+        {current && (
+          <span className="swatch" style={{ background: `#${current}` }} aria-hidden="true" />
         )}
         <button
           type="button"
           className="primary"
-          disabled={!tentative}
-          onClick={() => tentative && onPick(tentative)}
+          disabled={!current}
+          onClick={() => current && onCommit(current)}
         >
           取此点
         </button>

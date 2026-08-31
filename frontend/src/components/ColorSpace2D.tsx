@@ -4,7 +4,6 @@ import {
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
-  type WheelEvent as ReactWheelEvent,
 } from 'react';
 import type { EffectiveColor } from '../color/catalog';
 import { deltaE00, hexToLab, type Lab } from '../color/color';
@@ -43,6 +42,23 @@ export default function ColorSpace2D({
     setZoom(1);
     setPan({ x: 0, y: 0 });
   };
+
+  // React registers onWheel as a PASSIVE listener, so preventDefault() inside a
+  // React handler is ignored and the page scrolls behind the canvas. Bind it
+  // natively with { passive: false } instead.
+  useEffect(() => {
+    const canvas = planeRef.current;
+    if (!canvas) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      setZoom((z) => {
+        const next = e.deltaY < 0 ? z * 1.2 : z / 1.2;
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+      });
+    };
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', onWheel);
+  }, []);
 
   useEffect(() => {
     const canvas = planeRef.current;
@@ -169,11 +185,6 @@ export default function ColorSpace2D({
     setHover(hit ? { code: hit.code, x: hit.x, y: hit.y } : null);
   }
 
-  function onWheel(e: ReactWheelEvent<HTMLCanvasElement>) {
-    const next = e.deltaY < 0 ? zoom * 1.2 : zoom / 1.2;
-    setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next)));
-  }
-
   return (
     <div className="space2d">
       <div className="canvases">
@@ -196,7 +207,6 @@ export default function ColorSpace2D({
               drag.current = null;
               setHover(null);
             }}
-            onWheel={onWheel}
           />
           {hover && (
             <span

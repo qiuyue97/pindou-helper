@@ -125,21 +125,24 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .advanced-tables { display: flex; gap: 1rem; flex-wrap: wrap; }
 .inv { display: grid; gap: 1.2rem; }
 .inv-section-title { font-size: 0.9rem; margin: 0 0 0.4rem; color: var(--muted); font-weight: 600; }
-.inv-grid { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: flex-start; }
-.inv-col { display: grid; gap: 2px; min-width: 58px; }
+.inv-grid { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: flex-start; }
+.inv-col { display: grid; gap: 2px; }
 .inv-col-head { font-size: 0.75rem; font-weight: 700; color: var(--muted); text-align: center; padding-bottom: 2px; }
-.inv-cell { display: grid; gap: 0; }
-.inv-block { display: block; font-size: 0.68rem; line-height: 1.6; text-align: center; border-radius: 3px 3px 0 0; border: 1px solid var(--line); border-bottom: 0; font-variant-numeric: tabular-nums; }
+
+/* Mobile first: code above the quantity. */
+.inv-cell { display: grid; min-width: 52px; }
+.inv-block { display: block; font-size: 0.65rem; line-height: 1.6; text-align: center; border: 1px solid var(--line); border-bottom: 0; border-radius: 3px 3px 0 0; font-variant-numeric: tabular-nums; overflow: hidden; }
+.inv-qty, .inv-qty-input { width: 100%; font-size: 0.65rem; line-height: 1.5; padding: 0; text-align: center; border: 1px solid var(--line); border-radius: 0 0 3px 3px; background: #fff; font-variant-numeric: tabular-nums; }
+.inv-qty-input { border-color: var(--accent); font-family: inherit; }
 .inv-block.text-dark { color: #1c1c1a; }
 .inv-block.text-light { color: #fff; }
-.inv-qty { width: 100%; font-size: 0.72rem; line-height: 1.5; padding: 0; border: 1px solid var(--line); border-radius: 0 0 3px 3px; background: #fff; font-variant-numeric: tabular-nums; }
-.inv-qty-input { width: 100%; font-size: 0.72rem; line-height: 1.5; padding: 0; border: 1px solid var(--accent); border-radius: 0 0 3px 3px; text-align: center; font: inherit; }
-.scope-picker { display: inline-flex; align-items: center; gap: 0.6rem; }
-.scope-picker label { display: inline-flex; align-items: center; gap: 0.25rem; }
 
-@media (max-width: 640px) {
-  .inv-col { min-width: 52px; }
-  .inv-block, .inv-qty { font-size: 0.65rem; }
+/* Desktop: code and quantity side by side, so the grid uses the width instead
+   of the height and the page scrolls far less. */
+@media (min-width: 641px) {
+  .inv-cell { grid-template-columns: 1fr 1fr; min-width: 92px; }
+  .inv-block { border-bottom: 1px solid var(--line); border-right: 0; border-radius: 3px 0 0 3px; font-size: 0.7rem; line-height: 1.9; }
+  .inv-qty, .inv-qty-input { border-radius: 0 3px 3px 0; font-size: 0.7rem; line-height: 1.9; }
 }
 .plane-wrap { position: relative; }
 .point-label { position: absolute; pointer-events: none; background: #24241f; color: #fff; font-size: 0.72rem; padding: 1px 5px; border-radius: 3px; white-space: nowrap; z-index: 2; }

@@ -50,7 +50,7 @@ export default function ColorEditDialog({
         </>
       }
     >
-      <ColorPicker hex={draft} onChange={setDraft} />
+      <ColorPicker hex={draft} onPreview={setDraft} onCommit={setDraft} />
     </Modal>
   );
 }

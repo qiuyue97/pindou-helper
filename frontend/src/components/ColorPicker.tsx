@@ -5,17 +5,28 @@ import SamplePreview from './SamplePreview';
 
 export default function ColorPicker({
   hex,
-  onChange,
+  onPreview,
+  onCommit,
 }: {
+  /** The colour shown in the preview — follows the mouse over an image. */
   hex: string;
-  onChange: (hex: string) => void;
+  onPreview: (hex: string) => void;
+  /** A deliberate pick. Only this drives the match. */
+  onCommit: (hex: string) => void;
 }) {
+  // Typing a value or using the screen eyedropper is already deliberate, so
+  // those commit straight away; only the image path needs an explicit 取此点.
+  const both = (next: string) => {
+    onPreview(next);
+    onCommit(next);
+  };
+
   return (
     <div className="picker">
       <SamplePreview hex={hex} />
-      <EyeDropperButton onPick={onChange} />
-      <ImageSampler onPick={onChange} />
-      <ManualColorInput hex={hex} onChange={onChange} />
+      <EyeDropperButton onPick={both} />
+      <ImageSampler onPreview={onPreview} onCommit={onCommit} />
+      <ManualColorInput hex={hex} onChange={both} />
     </div>
   );
 }

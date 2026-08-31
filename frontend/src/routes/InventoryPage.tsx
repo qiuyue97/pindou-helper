@@ -4,6 +4,7 @@ import BatchDialog from '../components/BatchDialog';
 import CheckDialog from '../components/CheckDialog';
 import InventoryTable from '../components/InventoryTable';
 import StockoutView from '../components/StockoutView';
+import ThresholdControl from '../components/ThresholdControl';
 import type { CandidateSet } from '../color/match';
 
 type Dialog = 'add' | 'batch-add' | 'batch-deduct' | 'check' | null;
@@ -43,6 +44,7 @@ export default function InventoryPage() {
         <button type="button" onClick={() => setDialog('check')}>
           需求核对
         </button>
+        <ThresholdControl />
       </div>
 
       <InventoryTable scopeSet={scopeSet} />

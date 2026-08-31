@@ -6,9 +6,12 @@ import { selectCandidates, type CandidateSet } from '../color/match';
 import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
 
 export default function MatchPage() {
-  const [hex, setHex] = useState('7F7F7F');
-  const [set, setSet] = useState<CandidateSet>('291');
-  const [includeCustom, setIncludeCustom] = useState(true);
+  // What the picker shows (follows the mouse) vs what the match uses (only
+  // updates on a deliberate pick), so hovering an image does not re-rank 221 colours.
+  const [previewHex, setPreviewHex] = useState('7F7F7F');
+  const [matchHex, setMatchHex] = useState('7F7F7F');
+  const [set, setSet] = useState<CandidateSet>('221');
+  const [includeCustom, setIncludeCustom] = useState(false);
   const { colors } = useEffectiveCatalog();
 
   // One source of truth so the panel and the plot can never disagree.
@@ -22,12 +25,19 @@ export default function MatchPage() {
       <div className="match-page">
         <div>
           <h2>取色</h2>
-          <ColorPicker hex={hex} onChange={setHex} />
+          <ColorPicker
+            hex={previewHex}
+            onPreview={setPreviewHex}
+            onCommit={(next) => {
+              setPreviewHex(next);
+              setMatchHex(next);
+            }}
+          />
         </div>
         <div>
           <h2>匹配结果</h2>
           <MatchPanel
-            hex={hex}
+            hex={matchHex}
             candidates={candidates}
             set={set}
             includeCustom={includeCustom}
@@ -36,7 +46,7 @@ export default function MatchPage() {
           />
         </div>
       </div>
-      <ColorSpaceView sampleHex={hex} candidates={candidates} />
+      <ColorSpaceView sampleHex={matchHex} candidates={candidates} />
     </section>
   );
 }

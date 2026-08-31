@@ -75,7 +75,7 @@ export default function AddColorDialog({
         }}
       />
 
-      <ColorPicker hex={hex} onChange={setHex} />
+      <ColorPicker hex={hex} onPreview={setHex} onCommit={setHex} />
 
       {error && (
         <p role="alert" className="error">

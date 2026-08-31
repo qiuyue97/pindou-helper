@@ -32,18 +32,11 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: '历史' })).toBeInTheDocument();
   });
 
-  test('saves a new threshold', async () => {
-    mockFetch({ ...base, 'PATCH /api/settings': { body: { threshold: 250 } } });
+  test('does not carry the low-stock threshold — that belongs to the inventory tab', async () => {
+    mockFetch(base);
     setup();
-    const input = await screen.findByLabelText('低库存阈值');
-    await waitFor(() => expect(input).toHaveValue('500')); // wait for /auth/me
-    await userEvent.clear(input);
-    await userEvent.type(input, '250');
-    await userEvent.click(screen.getByRole('button', { name: '保存阈值' }));
-    await waitFor(() => expect(lastRequest('PATCH', '/api/settings')).toBeDefined());
-    expect(JSON.parse(String(lastRequest('PATCH', '/api/settings')!.init!.body))).toEqual({
-      threshold: 250,
-    });
+    await screen.findByText('amy');
+    expect(screen.queryByLabelText('低库存阈值')).not.toBeInTheDocument();
   });
 
   test('logs out', async () => {

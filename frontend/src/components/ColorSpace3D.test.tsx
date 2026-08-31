@@ -27,4 +27,20 @@ describe('ColorSpace3D', () => {
     renderWithProviders(<ColorSpace3D sampleHex="7F7F7F" candidates={candidates} />);
     expect(screen.getByText(/悬停看色号/)).toBeInTheDocument();
   });
+
+  test('has zoom controls that reset along with the angles', async () => {
+    renderWithProviders(<ColorSpace3D sampleHex="7F7F7F" candidates={candidates} />);
+    const zoom = screen.getByTestId('orbit-zoom');
+    expect(zoom).toHaveTextContent('1.0×');
+    await userEvent.click(screen.getByRole('button', { name: '放大' }));
+    expect(zoom).toHaveTextContent('1.4×');
+    await userEvent.click(screen.getByRole('button', { name: '重置视角' }));
+    expect(zoom).toHaveTextContent('1.0×');
+    expect(screen.getByTestId('view-angles')).toHaveTextContent('35');
+  });
+
+  test('mentions the axes and the new interactions', () => {
+    renderWithProviders(<ColorSpace3D sampleHex="7F7F7F" candidates={candidates} />);
+    expect(screen.getByText(/滚轮缩放/)).toBeInTheDocument();
+  });
 });
