@@ -76,3 +76,15 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   .topbar { gap: 0.5rem; }
   .topbar-right { width: 100%; margin-left: 0; }
 }
+
+.sample { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.sample-swatch { width: 5rem; height: 5rem; border-radius: 8px; border: 1px solid var(--line); }
+.sample-readout { display: grid; grid-template-columns: auto auto; gap: 0.1rem 0.8rem; margin: 0; font-variant-numeric: tabular-nums; }
+.sample-readout dt { color: var(--muted); font-size: 0.85rem; }
+.sample-readout dd { margin: 0; }
+.offscreen { position: absolute; left: -9999px; width: 1px; height: 1px; }
+.manual-input { display: grid; gap: 0.3rem; max-width: 22rem; }
+.manual-input input { padding: 0.4rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
+.channels { display: flex; gap: 0.5rem; }
+.channels span { display: grid; gap: 0.15rem; }
+.channels input { width: 5rem; }
