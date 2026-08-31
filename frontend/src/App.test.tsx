@@ -2,12 +2,15 @@ import { screen } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import App from './App';
 import { AuthProvider } from './state/AuthContext';
+import { ToastProvider } from './state/ToastContext';
 import { mockFetch, renderWithProviders } from './test/utils';
 
 const setup = () =>
   renderWithProviders(
     <AuthProvider>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </AuthProvider>,
   );
 

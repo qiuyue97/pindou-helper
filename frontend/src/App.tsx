@@ -1,4 +1,8 @@
+import { Route, Routes } from 'react-router-dom';
+import AppShell from './components/AppShell';
 import LoginForm from './components/LoginForm';
+import HistoryPage from './routes/HistoryPage';
+import InventoryPage from './routes/InventoryPage';
 import { useAuth } from './state/AuthContext';
 
 export default function App() {
@@ -8,9 +12,11 @@ export default function App() {
   if (!me) return <LoginForm />;
 
   return (
-    <main className="app">
-      <h1>拼豆助手</h1>
-      <span>{me.username}</span>
-    </main>
+    <Routes>
+      <Route element={<AppShell />}>
+        <Route index element={<InventoryPage />} />
+        <Route path="history" element={<HistoryPage />} />
+      </Route>
+    </Routes>
   );
 }
