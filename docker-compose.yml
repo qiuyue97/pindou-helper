@@ -1,0 +1,14 @@
+services:
+  pindou:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PINDOU_JWT_SECRET: ${PINDOU_JWT_SECRET:?set a long random secret in .env}
+      PINDOU_COOKIE_SECURE: "0"
+    volumes:
+      - pindou-data:/data
+    restart: unless-stopped
+
+volumes:
+  pindou-data:
