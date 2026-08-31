@@ -54,6 +54,10 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .modal-body { display: grid; gap: 0.3rem; margin: 0.8rem 0; }
 .modal-body input, .modal-body textarea { padding: 0.4rem; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
 .modal-foot { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.preview { margin-top: 0.7rem; font-size: 0.9rem; }
+.preview tbody tr { cursor: pointer; }
+.preview tbody tr:hover { background: #f6f6f3; }
+.preview tr.bad td { color: var(--danger); }
 
 @media (max-width: 640px) {
   .topbar { gap: 0.5rem; }
