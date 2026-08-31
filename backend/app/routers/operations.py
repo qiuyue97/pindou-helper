@@ -11,6 +11,7 @@ from app.models import Operation, User
 from app.replay import OP_TYPES, iter_lines
 from app.schemas import ChangeRow, ChangesOut, ImpactIn, OpEntry, OperationRow, OpPatchIn
 from app.service import impact, rematerialize
+from app.text_parse import ALL_CODE, parse_lines
 
 router = APIRouter()
 
@@ -25,22 +26,43 @@ _LABELS = {
 }
 
 
+def _scope_label(op: Operation) -> str | None:
+    scope = op.payload.get("scope") if isinstance(op.payload, dict) else None
+    if not scope or scope.get("kind") != "all":
+        return None
+    return f"{ALL_CODE}({scope.get('set', '291')})"
+
+
 def _entries_of(op: Operation) -> list[OpEntry]:
     if op.type in ("add_code", "set"):
         return [OpEntry(code=op.payload["code"], kind="set", amount=int(op.payload["qty"]))]
     if op.type == "delete":
         return [OpEntry(code=op.payload["code"], kind="remove", amount=None)]
+
     kind = "add" if op.type.endswith("_add") else "deduct"
+
+    # An ALL row expands to hundreds of lines on disk. Re-derive the rows the user
+    # actually typed from payload.raw so the history stays one line per typed row.
+    if _scope_label(op) is not None and isinstance(op.payload.get("raw"), str):
+        typed = [p for p in parse_lines(op.payload["raw"]) if p.status == "ok"]
+        if typed:
+            return [
+                OpEntry(code=p.code or "", kind=kind, amount=p.qty) for p in typed
+            ]
+
     return [OpEntry(code=c, kind=kind, amount=q) for c, q in iter_lines(op.type, op.payload)]
 
 
 def _summary(op: Operation) -> str:
     label = _LABELS.get(op.type, op.type)
+    scope = _scope_label(op)
     parts = []
     for e in _entries_of(op):
         sign = "+" if e.kind == "add" else "-" if e.kind == "deduct" else "="
         amount = "" if e.amount is None else e.amount
-        parts.append(f"{e.code} {sign}{amount}")
+        # Show the wildcard with its scope so 221 and 291 are never confused.
+        shown = scope if (scope and e.code == ALL_CODE) else e.code
+        parts.append(f"{shown} {sign}{amount}")
     return f"{label} " + ", ".join(parts)
 
 
@@ -50,6 +72,8 @@ def _row(op: Operation) -> OperationRow:
         type=op.type,
         summary=_summary(op),
         entries=_entries_of(op),
+        scope_label=_scope_label(op),
+        raw=op.payload.get("raw") if isinstance(op.payload, dict) else None,
         voided=op.voided,
         created_at=op.created_at,
         edited_at=op.edited_at,
@@ -126,7 +150,7 @@ def patch_operation(
         raise HTTPException(status_code=422, detail=f"bad operation type: {new_type}")
     if new_type != "delete":
         known = effective_codes(session, user.id)
-        bad = _referenced(new_type, body.payload) - known
+        bad = _referenced(new_type, body.payload) - known - {ALL_CODE}
         if bad:
             raise HTTPException(status_code=422, detail=f"unknown colour code(s): {sorted(bad)}")
     op.type = new_type

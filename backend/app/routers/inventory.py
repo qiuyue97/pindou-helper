@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.catalog import effective_codes
+from app.catalog import effective_codes, scope_codes
 from app.db import get_session
 from app.deps import get_current_user
 from app.models import InventoryItem, User
@@ -21,7 +21,7 @@ from app.schemas import (
     StockoutOut,
 )
 from app.service import load_inventory, record, rematerialize
-from app.text_parse import parse_lines
+from app.text_parse import ALL_CODE, expand_lines, parse_lines
 
 router = APIRouter()
 
@@ -85,7 +85,7 @@ def batch(
     results: list[BatchLineResult] = []
     for p in parse_lines(body.text):
         status, message = p.status, p.message
-        if status == "ok" and p.code not in known:
+        if status == "ok" and p.code != ALL_CODE and p.code not in known:
             status, message = "code_not_found", f"色号 '{p.code}' 不存在"
         results.append(
             BatchLineResult(line=p.line_no, code=p.code, qty=p.qty, status=status, message=message)
@@ -94,9 +94,26 @@ def batch(
     if not results or any(r.status != "ok" for r in results):
         return BatchOut(ok=False, applied=False, results=results, changes=[])
 
+    # ALL is expanded and FROZEN here, so the operation's effect can never drift
+    # when the catalogue changes later. The scope is recorded alongside it purely
+    # so the history can render "ALL(221)" instead of 221 separate entries.
+    uses_all = any(r.code == ALL_CODE for r in results)
+    all_codes = (
+        scope_codes(session, user.id, body.scope.set, body.scope.include_custom)
+        if uses_all
+        else []
+    )
+    lines = expand_lines([(r.code, r.qty) for r in results], all_codes)  # type: ignore[arg-type]
+
     op_type = "batch_add" if body.mode == "add" else "batch_deduct"
-    lines = [{"code": r.code, "qty": r.qty} for r in results]
-    record(session, user.id, op_type, {"raw": body.text, "lines": lines})
+    payload: dict = {"raw": body.text, "lines": lines}
+    if uses_all:
+        payload["scope"] = {
+            "kind": "all",
+            "set": body.scope.set,
+            "include_custom": body.scope.include_custom,
+        }
+    record(session, user.id, op_type, payload)
     diff = rematerialize(session, user.id)
     session.commit()
     return BatchOut(

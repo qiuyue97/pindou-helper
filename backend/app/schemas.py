@@ -73,9 +73,15 @@ class ChangesOut(BaseModel):
     changes: list[ChangeRow]
 
 
+class BatchScope(BaseModel):
+    set: Literal["221", "291"] = "291"
+    include_custom: bool = True
+
+
 class BatchIn(BaseModel):
     mode: Literal["add", "deduct"]
     text: str
+    scope: BatchScope = BatchScope()
 
 
 class BatchLineResult(BaseModel):
@@ -131,6 +137,8 @@ class OperationRow(BaseModel):
     type: str
     summary: str
     entries: list[OpEntry]
+    scope_label: str | None = None
+    raw: str | None = None
     voided: bool
     created_at: datetime
     edited_at: datetime | None

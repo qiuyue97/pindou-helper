@@ -12,6 +12,9 @@ BASE: list[dict] = json.loads(_PATH.read_text(encoding="utf-8"))
 BASE_BY_CODE: dict[str, dict] = {c["code"]: c for c in BASE}
 BASE_CODES: frozenset[str] = frozenset(BASE_BY_CODE)
 
+# The nine series the original Excel tracked.
+SERIES_221: frozenset[str] = frozenset({"A", "B", "C", "D", "E", "F", "G", "H", "M"})
+
 
 def _series_of(code: str) -> str:
     m = re.match(r"^[A-Za-z]+", code)
@@ -38,3 +41,21 @@ def effective_catalog(session: Session, user_id: int) -> list[dict]:
     ]
     out.extend({"code": r.code, "series": _series_of(r.code), "hex": r.hex} for r in customs)
     return out
+
+
+def scope_codes(
+    session: Session, user_id: int, candidate_set: str, include_custom: bool
+) -> list[str]:
+    """Ordered codes covered by an ALL row for the given scope."""
+    codes = [
+        c["code"] for c in BASE if candidate_set == "291" or c["series"] in SERIES_221
+    ]
+    if include_custom:
+        codes.extend(
+            session.scalars(
+                select(UserColor.code)
+                .where(UserColor.user_id == user_id, UserColor.source == "custom")
+                .order_by(UserColor.code)
+            ).all()
+        )
+    return codes
