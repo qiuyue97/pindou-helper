@@ -24,4 +24,18 @@ python -m venv .venv
 
 Config via `PINDOU_`-prefixed env vars — see `backend/.env.example`.
 
-The React UI + packaging arrive in Plan 3.
+## Running both (dev)
+
+Two terminals:
+
+```
+# 1) API on :8000
+cd backend && .venv/Scripts/python -m uvicorn "app.main:create_app" --factory --reload --port 8000
+
+# 2) UI on :5173 (proxies /api to :8000)
+cd frontend && npm run dev
+```
+
+Open http://localhost:5173.
+
+Colour matching, the colour-space visualisation, my-colours and Docker packaging arrive in Plan 4.
