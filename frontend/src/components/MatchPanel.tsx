@@ -1,8 +1,13 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import type { EffectiveColor } from '../color/catalog';
 import { useInventory } from '../api/hooks';
 import { hexToLab } from '../color/color';
 import { buildIndex, rankMatches, verdict, type CandidateSet } from '../color/match';
+
+// Dev-only comparison metrics. The lazy() boundary keeps the chunk out of the
+// default build's entry bundle; deleting this file plus the guard below is safe.
+const SHOW_ADVANCED = import.meta.env.VITE_SHOW_ADVANCED_METRICS === '1';
+const Advanced = lazy(() => import('./AdvancedMetricsPanel'));
 
 export default function MatchPanel({
   hex,
@@ -112,6 +117,12 @@ export default function MatchPanel({
               </tbody>
             </table>
           </details>
+
+          {SHOW_ADVANCED && (
+            <Suspense fallback={null}>
+              <Advanced sampleHex={hex} candidates={candidates} />
+            </Suspense>
+          )}
         </>
       )}
     </div>

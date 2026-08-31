@@ -85,4 +85,11 @@ describe('MatchPanel', () => {
     const headline = await screen.findByTestId('match-headline');
     expect(headline).toHaveTextContent('差异明显，色卡里可能没有很匹配的颜色');
   });
+
+  test('does not show the dev metrics panel by default', async () => {
+    mockFetch(base);
+    setup('000000');
+    await screen.findByTestId('match-headline');
+    expect(screen.queryByText('对照指标（开发用）')).not.toBeInTheDocument();
+  });
 });
