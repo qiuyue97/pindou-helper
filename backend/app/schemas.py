@@ -118,3 +118,31 @@ class StockoutOut(BaseModel):
     codes: list[str]
     text: str
     items: list[StockoutItem]
+
+
+class OpEntry(BaseModel):
+    code: str
+    kind: Literal["add", "deduct", "set", "remove"]
+    amount: int | None
+
+
+class OperationRow(BaseModel):
+    seq: int
+    type: str
+    summary: str
+    entries: list[OpEntry]
+    voided: bool
+    created_at: datetime
+    edited_at: datetime | None
+    note: str | None
+
+
+class OpPatchIn(BaseModel):
+    type: str | None = None
+    payload: dict
+
+
+class ImpactIn(BaseModel):
+    mode: Literal["void", "edit"]
+    type: str | None = None
+    payload: dict | None = None
