@@ -1,3 +1,4 @@
+import { ClipboardCheck, PackageMinus, PackagePlus, Plus, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import AddCodeDialog from '../components/AddCodeDialog';
 import BatchDialog from '../components/BatchDialog';
@@ -33,15 +34,19 @@ export default function InventoryPage() {
           ))}
         </div>
         <button type="button" onClick={() => setDialog('add')}>
+          <Plus size={15} aria-hidden="true" />
           添加色号
         </button>
         <button type="button" onClick={() => setDialog('batch-add')}>
+          <PackagePlus size={15} aria-hidden="true" />
           批量补货
         </button>
         <button type="button" onClick={() => setDialog('batch-deduct')}>
+          <PackageMinus size={15} aria-hidden="true" />
           批量扣减
         </button>
         <button type="button" onClick={() => setDialog('check')}>
+          <ClipboardCheck size={15} aria-hidden="true" />
           需求核对
         </button>
         <ThresholdControl />
@@ -49,7 +54,10 @@ export default function InventoryPage() {
 
       <InventoryTable scopeSet={scopeSet} />
 
-      <h2>缺货清单</h2>
+      <h2 className="section-h">
+        <TriangleAlert size={17} aria-hidden="true" />
+        缺货清单
+      </h2>
       <StockoutView />
 
       {dialog === 'add' && <AddCodeDialog onClose={close} />}

@@ -10,7 +10,7 @@ import { mockFetch, renderWithProviders } from '../test/utils';
 import MatchPanel from './MatchPanel';
 
 /** Mirrors MatchPage, which owns the candidate-set state. */
-function Host({ hex }: { hex: string }) {
+function Host({ hex }: { hex: string | null }) {
   const [set, setSet] = useState<CandidateSet>('291');
   const [includeCustom, setIncludeCustom] = useState(true);
   const { colors } = useEffectiveCatalog();
@@ -91,5 +91,20 @@ describe('MatchPanel', () => {
     setup('000000');
     await screen.findByTestId('match-headline');
     expect(screen.queryByText('对照指标（开发用）')).not.toBeInTheDocument();
+  });
+});
+
+describe('MatchPanel · nothing picked yet', () => {
+  test('prompts instead of guessing a colour', async () => {
+    mockFetch(base);
+    renderWithProviders(
+      <AuthProvider>
+        <ToastProvider>
+          <Host hex={null} />
+        </ToastProvider>
+      </AuthProvider>,
+    );
+    expect(await screen.findByText(/先取一个颜色/)).toBeInTheDocument();
+    expect(screen.queryByTestId('match-headline')).not.toBeInTheDocument();
   });
 });

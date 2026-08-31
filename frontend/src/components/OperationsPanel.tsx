@@ -1,3 +1,4 @@
+import { Pencil, Redo2, Undo2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { apiSend } from '../api/client';
 import { useApiMutation, useOperations } from '../api/hooks';
@@ -127,15 +128,18 @@ export default function OperationsPanel() {
             <span className="opactions">
               {op.voided ? (
                 <button type="button" onClick={() => void doRestore(op)}>
+                  <Redo2 size={14} aria-hidden="true" />
                   恢复
                 </button>
               ) : (
                 <>
                   <button type="button" onClick={() => void askVoid(op)}>
+                    <Undo2 size={14} aria-hidden="true" />
                     撤销
                   </button>
                   {EDITABLE_BATCH.has(op.type) && (
                     <button type="button" onClick={() => setEditing(op)}>
+                      <Pencil size={14} aria-hidden="true" />
                       编辑
                     </button>
                   )}

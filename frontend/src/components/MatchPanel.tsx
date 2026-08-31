@@ -17,7 +17,7 @@ export default function MatchPanel({
   onSetChange,
   onIncludeCustomChange,
 }: {
-  hex: string;
+  hex: string | null;
   candidates: EffectiveColor[];
   set: CandidateSet;
   includeCustom: boolean;
@@ -29,7 +29,7 @@ export default function MatchPanel({
   // O(n^2) — keyed on candidates only, never on the sample.
   const index = useMemo(() => buildIndex(candidates), [candidates]);
   const ranked = useMemo(
-    () => (candidates.length >= 2 ? rankMatches(hexToLab(hex), candidates, index) : null),
+    () => (hex && candidates.length >= 2 ? rankMatches(hexToLab(hex), candidates, index) : null),
     [hex, candidates, index],
   );
 
@@ -66,7 +66,9 @@ export default function MatchPanel({
         </label>
       </fieldset>
 
-      {!ranked ? (
+      {!hex ? (
+        <p className="muted">先取一个颜色：屏幕吸色、上传图片后滑过取色，或直接填十六进制。</p>
+      ) : !ranked ? (
         <p>还需要至少两个候选色</p>
       ) : (
         <>

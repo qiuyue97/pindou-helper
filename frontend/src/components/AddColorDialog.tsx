@@ -18,7 +18,7 @@ export default function AddColorDialog({
   const { show } = useToast();
   const qc = useQueryClient();
   const [code, setCode] = useState('');
-  const [hex, setHex] = useState('7F7F7F');
+  const [hex, setHex] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [conflict, setConflict] = useState<string | null>(null);
 
@@ -37,6 +37,10 @@ export default function AddColorDialog({
     setError('');
     setConflict(null);
     try {
+      if (!hex) {
+        setError('请先选一个颜色');
+        return;
+      }
       await add.mutateAsync({ code: normalized, hex });
       show(`已添加 ${normalized}`);
       onClose();

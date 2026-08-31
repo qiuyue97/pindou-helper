@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { ApiError, apiSend } from '../api/client';
@@ -63,7 +64,8 @@ export default function MyColorsPage() {
           onChange={(e) => setQuery(e.target.value)}
         />
         <button type="button" onClick={() => setAdding(true)}>
-          ＋ 添加色号
+          <Plus size={15} aria-hidden="true" />
+          添加色号
         </button>
       </div>
 

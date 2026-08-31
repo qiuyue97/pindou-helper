@@ -1,15 +1,17 @@
+import { Copy } from 'lucide-react';
 import { useRef } from 'react';
 import { hexToLab, hexToRgb } from '../color/color';
 import { useToast } from '../state/ToastContext';
 
-export default function SamplePreview({ hex }: { hex: string }) {
+export default function SamplePreview({ hex }: { hex: string | null }) {
   const { show } = useToast();
   const ref = useRef<HTMLInputElement>(null);
-  const rgb = hexToRgb(hex);
-  const lab = hexToLab(hex);
+  const rgb = hex ? hexToRgb(hex) : null;
+  const lab = hex ? hexToLab(hex) : null;
   const f = (n: number) => n.toFixed(1);
 
   async function copy() {
+    if (!hex) return;
     const text = `#${hex}`;
     try {
       await navigator.clipboard.writeText(text);
@@ -25,19 +27,16 @@ export default function SamplePreview({ hex }: { hex: string }) {
       <span
         className="sample-swatch"
         data-testid="sample-swatch"
-        style={{ background: `#${hex}` }}
+        data-empty={hex ? undefined : 'true'}
+        style={hex ? { background: `#${hex}` } : undefined}
       />
       <dl className="sample-readout">
         <dt>HEX</dt>
-        <dd>#{hex}</dd>
+        <dd>{hex ? `#${hex}` : '—'}</dd>
         <dt>RGB</dt>
-        <dd>
-          {rgb[0]}, {rgb[1]}, {rgb[2]}
-        </dd>
+        <dd>{rgb ? `${rgb[0]}, ${rgb[1]}, ${rgb[2]}` : '—'}</dd>
         <dt>Lab</dt>
-        <dd>
-          {f(lab[0])}, {f(lab[1])}, {f(lab[2])}
-        </dd>
+        <dd>{lab ? `${f(lab[0])}, ${f(lab[1])}, ${f(lab[2])}` : '—'}</dd>
       </dl>
       <input
         ref={ref}
@@ -47,7 +46,8 @@ export default function SamplePreview({ hex }: { hex: string }) {
         aria-hidden="true"
         tabIndex={-1}
       />
-      <button type="button" onClick={() => void copy()}>
+      <button type="button" disabled={!hex} onClick={() => void copy()}>
+        <Copy size={15} aria-hidden="true" />
         复制
       </button>
     </div>

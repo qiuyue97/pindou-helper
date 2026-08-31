@@ -1,3 +1,4 @@
+import { Pipette } from 'lucide-react';
 export default function EyeDropperButton({ onPick }: { onPick: (hex: string) => void }) {
   const supported = typeof window !== 'undefined' && 'EyeDropper' in window;
   if (!supported) return null;
@@ -19,6 +20,7 @@ export default function EyeDropperButton({ onPick }: { onPick: (hex: string) => 
 
   return (
     <button type="button" onClick={() => void pick()}>
+      <Pipette size={15} aria-hidden="true" />
       屏幕吸色
     </button>
   );

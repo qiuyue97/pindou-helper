@@ -8,8 +8,8 @@ import { useEffectiveCatalog } from '../state/useEffectiveCatalog';
 export default function MatchPage() {
   // What the picker shows (follows the mouse) vs what the match uses (only
   // updates on a deliberate pick), so hovering an image does not re-rank 221 colours.
-  const [previewHex, setPreviewHex] = useState('7F7F7F');
-  const [matchHex, setMatchHex] = useState('7F7F7F');
+  const [previewHex, setPreviewHex] = useState<string | null>(null);
+  const [matchHex, setMatchHex] = useState<string | null>(null);
   const [set, setSet] = useState<CandidateSet>('221');
   const [includeCustom, setIncludeCustom] = useState(false);
   const { colors } = useEffectiveCatalog();

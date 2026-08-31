@@ -49,7 +49,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const thresholdM = useMutation({
     mutationFn: (threshold: number) =>
       apiSend<{ threshold: number }>('PATCH', '/api/settings', { threshold }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['me'] }),
+    onSuccess: async () => {
+      // The stockout list is computed SERVER-side from this threshold, so it has
+      // to be refetched too — invalidating ['me'] alone leaves it stale until a
+      // full page reload. (The inventory tiers are derived client-side from
+      // me.threshold, so those re-render on their own.)
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['me'] }),
+        qc.invalidateQueries({ queryKey: ['stockout'] }),
+      ]);
+    },
   });
 
   const value: AuthValue = {

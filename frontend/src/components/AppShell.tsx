@@ -1,5 +1,13 @@
+import { History, LogOut, Palette, SwatchBook, Boxes } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../state/AuthContext';
+
+const TABS = [
+  { to: '/', label: '库存', Icon: Boxes, end: true },
+  { to: '/match', label: '配色', Icon: Palette, end: false },
+  { to: '/colors', label: '我的色卡', Icon: SwatchBook, end: false },
+  { to: '/history', label: '历史', Icon: History, end: false },
+];
 
 export default function AppShell() {
   const { me, logout } = useAuth();
@@ -9,16 +17,17 @@ export default function AppShell() {
       <header className="topbar">
         <h1>拼豆助手</h1>
         <nav>
-          <NavLink to="/" end>
-            库存
-          </NavLink>
-          <NavLink to="/match">配色</NavLink>
-          <NavLink to="/colors">我的色卡</NavLink>
-          <NavLink to="/history">历史</NavLink>
+          {TABS.map(({ to, label, Icon, end }) => (
+            <NavLink key={to} to={to} end={end}>
+              <Icon size={16} aria-hidden="true" />
+              {label}
+            </NavLink>
+          ))}
         </nav>
         <div className="topbar-right">
-          <span>{me?.username}</span>
-          <button type="button" onClick={() => void logout()}>
+          <span className="username">{me?.username}</span>
+          <button type="button" className="ghost" onClick={() => void logout()}>
+            <LogOut size={15} aria-hidden="true" />
             退出
           </button>
         </div>

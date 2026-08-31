@@ -1,3 +1,4 @@
+import { Copy } from 'lucide-react';
 import { useRef } from 'react';
 import { useStockout } from '../api/hooks';
 import { qtyTier } from '../lib/qty';
@@ -64,6 +65,7 @@ export default function StockoutView() {
         value={data.text}
       />
       <button type="button" onClick={() => void copy(data.text)}>
+        <Copy size={15} aria-hidden="true" />
         复制
       </button>
     </div>

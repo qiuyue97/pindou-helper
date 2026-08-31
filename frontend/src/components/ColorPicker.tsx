@@ -9,7 +9,7 @@ export default function ColorPicker({
   onCommit,
 }: {
   /** The colour shown in the preview — follows the mouse over an image. */
-  hex: string;
+  hex: string | null;
   onPreview: (hex: string) => void;
   /** A deliberate pick. Only this drives the match. */
   onCommit: (hex: string) => void;

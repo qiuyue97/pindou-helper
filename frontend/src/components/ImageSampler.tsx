@@ -1,3 +1,4 @@
+import { ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { rgbToHex } from '../color/color';
 import { displayToPixel, fitContain, loadBitmap, pixelAt } from '../lib/imageSample';
@@ -174,9 +175,11 @@ export default function ImageSampler({
 
       <div className="sampler-controls">
         <button type="button" onClick={() => setZoom((z) => Math.min(4, z * 1.5))}>
+          <ZoomIn size={15} aria-hidden="true" />
           放大
         </button>
         <button type="button" onClick={() => setZoom((z) => Math.max(0.5, z / 1.5))}>
+          <ZoomOut size={15} aria-hidden="true" />
           缩小
         </button>
         {current && (

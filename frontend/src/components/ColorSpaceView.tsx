@@ -7,7 +7,7 @@ export default function ColorSpaceView({
   sampleHex,
   candidates,
 }: {
-  sampleHex: string;
+  sampleHex: string | null;
   candidates: EffectiveColor[];
 }) {
   const [narrow, setNarrow] = useState(false);
@@ -16,6 +16,8 @@ export default function ColorSpaceView({
     if (typeof window.matchMedia !== 'function') return;
     setNarrow(window.matchMedia('(max-width: 860px)').matches);
   }, []);
+
+  if (!sampleHex) return null;
 
   return (
     <div className="spaceview">
