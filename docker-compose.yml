@@ -14,8 +14,9 @@ services:
     image: pindou-helper:latest
     container_name: pindou-helper
     ports:
-      # 反代监听 443，转发到这里。若 8000 已被占用改左边这个。
-      - "8000:8000"
+      # 反代监听 443，转发到宿主机的 PINDOU_PORT。宿主机端口被占用时
+      # 只改 .env 里的 PINDOU_PORT 即可，容器内始终是 8000。
+      - "${PINDOU_PORT:-8000}:8000"
     environment:
       # 必填。会话用它签名，改动会让所有人重新登录。
       PINDOU_JWT_SECRET: ${PINDOU_JWT_SECRET:?set PINDOU_JWT_SECRET in .env}

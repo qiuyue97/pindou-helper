@@ -159,6 +159,7 @@ location / {
 | `PINDOU_JWT_SECRET` | 必填 | 会话签名密钥，≥32 字符 |
 | `PINDOU_COOKIE_SECURE` | `1` | 默认按 https 部署。仅在临时用 `http://` 直连调试时改成 `0`，否则浏览器会拒存 cookie，表现为每次请求都掉登录 |
 | `TZ` | `Asia/Shanghai` | 只影响服务端日志时间；界面时间用浏览器本地时区 |
+| `PINDOU_PORT` | `8000` | 宿主机映射端口。容器内固定 8000，宿主机端口冲突时改这个 |
 
 **数据与备份**：SQLite 在名为 `pindou-data` 的卷里（容器内 `/data/pindou.db`）。
 备份这一个文件就等于备份了全部数据。
