@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -70,3 +71,50 @@ class ChangeRow(BaseModel):
 
 class ChangesOut(BaseModel):
     changes: list[ChangeRow]
+
+
+class BatchIn(BaseModel):
+    mode: Literal["add", "deduct"]
+    text: str
+
+
+class BatchLineResult(BaseModel):
+    line: int
+    code: str | None
+    qty: int | None
+    status: str
+    message: str
+
+
+class BatchOut(BaseModel):
+    ok: bool
+    applied: bool
+    results: list[BatchLineResult]
+    changes: list[ChangeRow]
+
+
+class CheckIn(BaseModel):
+    text: str
+
+
+class CheckLineResult(BaseModel):
+    line: int
+    code: str | None
+    need: int | None
+    have: int | None
+    status: str
+
+
+class CheckOut(BaseModel):
+    results: list[CheckLineResult]
+
+
+class StockoutItem(BaseModel):
+    code: str
+    quantity: int
+
+
+class StockoutOut(BaseModel):
+    codes: list[str]
+    text: str
+    items: list[StockoutItem]
