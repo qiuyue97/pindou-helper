@@ -1,5 +1,7 @@
-# syntax=docker/dockerfile:1
-
+# 刻意不写 `# syntax=docker/dockerfile:1`：那会让 BuildKit 去 Docker Hub 拉
+# 前端镜像，在访问不到 Hub 的环境（如国内 NAS）直接构建失败。本文件没有用到
+# 任何需要新 syntax 的特性。
+#
 # 所有镜像源都是 ARG，默认走国内源；在墙外构建时用
 #   docker compose build --build-arg REGISTRY=docker.io \
 #       --build-arg NPM_REGISTRY=https://registry.npmjs.org \
