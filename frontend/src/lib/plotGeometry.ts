@@ -75,3 +75,18 @@ export function clampSegmentToBox(
   const t = Math.min(1, Math.max(0, tMax));
   return { x: from.x + d.x * t, y: from.y + d.y * t };
 }
+
+/**
+ * Scale a point away from a fixed anchor.
+ *
+ * Zooming about the canvas centre pushes an off-centre subject out of view, so
+ * both plots anchor on the sampled colour instead: it stays exactly where it is
+ * and everything else spreads around it.
+ */
+export function zoomAbout(
+  p: { x: number; y: number },
+  anchor: { x: number; y: number },
+  zoom: number,
+): { x: number; y: number } {
+  return { x: anchor.x + (p.x - anchor.x) * zoom, y: anchor.y + (p.y - anchor.y) * zoom };
+}

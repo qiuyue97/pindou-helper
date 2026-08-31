@@ -9,7 +9,7 @@ import type { EffectiveColor } from '../color/catalog';
 import { deltaE00, hexToLab, type Lab } from '../color/color';
 import { selectPlotSet } from '../color/neighbors';
 import { nearestPoint, type ScreenPoint } from '../lib/hitTest';
-import { lightnessScale, planeScale } from '../lib/plotGeometry';
+import { lightnessScale, planeScale, zoomAbout } from '../lib/plotGeometry';
 
 const PLANE = 280;
 const STRIP_W = 60;
@@ -68,12 +68,12 @@ export default function ColorSpace2D({
     const box = { width: PLANE, height: PLANE, pad: 24 };
     const labs: Lab[] = [sampleLab, ...plot.map((c) => c.lab)];
     const base = planeScale(labs, box);
-    const cx = PLANE / 2;
-    const cy = PLANE / 2;
-    // Zoom/pan about the canvas centre.
+    // Anchor the zoom on the sampled colour so it never drifts off-canvas;
+    // panning still moves the whole plot afterwards.
+    const anchor = base.toScreen(sampleLab);
     const toScreen = (lab: Lab) => {
-      const p = base.toScreen(lab);
-      return { x: cx + (p.x - cx) * zoom + pan.x, y: cy + (p.y - cy) * zoom + pan.y };
+      const p = zoomAbout(base.toScreen(lab), anchor, zoom);
+      return { x: p.x + pan.x, y: p.y + pan.y };
     };
 
     ctx.clearRect(0, 0, PLANE, PLANE);

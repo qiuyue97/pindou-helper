@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'vitest';
 import type { Lab } from '../color/color';
 import { project3d } from '../color/neighbors';
-import { clampSegmentToBox, lightnessScale, orbitScale, planeScale } from './plotGeometry';
+import {
+  clampSegmentToBox,
+  lightnessScale,
+  orbitScale,
+  planeScale,
+  zoomAbout,
+} from './plotGeometry';
 
 const box = { width: 200, height: 200, pad: 20 };
 
@@ -130,5 +136,83 @@ describe('axis labels stay on screen at any zoom', () => {
     const far = anchorFor('a', 8, 0, 0);
     // zoomed in, the anchor is pinned to the edge and therefore further right
     expect(far.x).toBeGreaterThan(near.x);
+  });
+});
+
+describe('zoomAbout', () => {
+  const anchor = { x: 40, y: 90 };
+
+  test('zoom 1x changes nothing', () => {
+    expect(zoomAbout({ x: 10, y: 20 }, anchor, 1)).toEqual({ x: 10, y: 20 });
+  });
+
+  test('the anchor itself never moves, at any zoom', () => {
+    for (const z of [0.5, 1, 2, 8]) {
+      const p = zoomAbout(anchor, anchor, z);
+      expect(p.x).toBeCloseTo(anchor.x, 9);
+      expect(p.y).toBeCloseTo(anchor.y, 9);
+    }
+  });
+
+  test('distances from the anchor scale by the zoom factor', () => {
+    const p = zoomAbout({ x: 60, y: 90 }, anchor, 3);
+    expect(p.x - anchor.x).toBeCloseTo((60 - anchor.x) * 3, 9);
+    expect(p.y).toBeCloseTo(anchor.y, 9);
+  });
+
+  test('a point sampled far from the origin stays put while its neighbours spread', () => {
+    // the anchor is the sample; a nearby neighbour must move away from it, not
+    // sweep the sample off-screen
+    const near = { x: 45, y: 92 };
+    const zoomed = zoomAbout(near, anchor, 4);
+    expect(Math.hypot(zoomed.x - anchor.x, zoomed.y - anchor.y)).toBeCloseTo(
+      Math.hypot(near.x - anchor.x, near.y - anchor.y) * 4,
+      9,
+    );
+  });
+});
+
+describe('an off-centre sample survives zooming (the 3D regression)', () => {
+  const SIZE = 320;
+  const AXIS = 60;
+
+  // Mirrors ColorSpace3D: project everything, fit, then zoom about the SAMPLE.
+  function samplePosAtZoom(sample: Lab, others: Lab[], zoom: number, az = 35, el = 20) {
+    const pts = [
+      ...others.map((l) => project3d(l, az, el)),
+      project3d(sample, az, el),
+      project3d([50 + AXIS, 0, 0] as Lab, az, el),
+      project3d([50 - AXIS, 0, 0] as Lab, az, el),
+      project3d([50, AXIS, 0] as Lab, az, el),
+      project3d([50, -AXIS, 0] as Lab, az, el),
+      project3d([50, 0, AXIS] as Lab, az, el),
+      project3d([50, 0, -AXIS] as Lab, az, el),
+    ];
+    const base = orbitScale(pts, { width: SIZE, height: SIZE, pad: 28 });
+    const anchor = base.toScreen(project3d(sample, az, el));
+    return zoomAbout(base.toScreen(project3d(sample, az, el)), anchor, zoom);
+  }
+
+  // F5 #E7002F — a hard red, about as far from the neutral axis as the palette gets
+  const vivid: Lab = [49, 75, 43];
+  const neighbours: Lab[] = [
+    [50, 0, 0],
+    [80, -65, 68],
+    [38, 23, -62],
+  ];
+
+  test.each([1, 2, 4, 8])('sample stays on canvas at %s×', (zoom) => {
+    const p = samplePosAtZoom(vivid, neighbours, zoom);
+    expect(p.x).toBeGreaterThanOrEqual(0);
+    expect(p.x).toBeLessThanOrEqual(SIZE);
+    expect(p.y).toBeGreaterThanOrEqual(0);
+    expect(p.y).toBeLessThanOrEqual(SIZE);
+  });
+
+  test('the sample does not move at all as the zoom changes', () => {
+    const at1 = samplePosAtZoom(vivid, neighbours, 1);
+    const at8 = samplePosAtZoom(vivid, neighbours, 8);
+    expect(at8.x).toBeCloseTo(at1.x, 9);
+    expect(at8.y).toBeCloseTo(at1.y, 9);
   });
 });

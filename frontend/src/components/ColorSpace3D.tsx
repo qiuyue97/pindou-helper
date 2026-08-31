@@ -3,7 +3,7 @@ import type { EffectiveColor } from '../color/catalog';
 import { deltaE00, hexToLab, type Lab } from '../color/color';
 import { project3d, selectPlotSet } from '../color/neighbors';
 import { nearestPoint, type ScreenPoint } from '../lib/hitTest';
-import { clampSegmentToBox, orbitScale } from '../lib/plotGeometry';
+import { clampSegmentToBox, orbitScale, zoomAbout } from '../lib/plotGeometry';
 
 const SIZE = 320;
 const DEFAULT_AZ = 35;
@@ -48,11 +48,12 @@ export default function ColorSpace3D({
       [...nodes.map((n) => n.p), { x: AXIS, y: AXIS }, { x: -AXIS, y: -AXIS }],
       { width: SIZE, height: SIZE, pad: 28 },
     );
-    const c = SIZE / 2;
+    // Anchor the zoom on the sampled colour, not the canvas centre, so a very
+    // saturated sample cannot be pushed out of view by zooming in.
+    const anchor = base.toScreen(nodes[nodes.length - 1]!.p);
     const scale = {
       toScreen(p: { x: number; y: number }) {
-        const q = base.toScreen(p);
-        return { x: c + (q.x - c) * zoom, y: c + (q.y - c) * zoom };
+        return zoomAbout(base.toScreen(p), anchor, zoom);
       },
     };
     const depths = nodes.map((n) => n.p.depth);
