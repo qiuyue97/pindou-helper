@@ -46,3 +46,16 @@ export async function apiSend<T>(
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
+
+/** Multipart upload. The browser must set its own Content-Type (it carries the
+ *  boundary), so unlike apiSend this one deliberately does not set it. */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'X-Requested-With': 'pindou' },
+    body: form,
+  });
+  if (!res.ok) throw await toError(res);
+  return (await res.json()) as T;
+}

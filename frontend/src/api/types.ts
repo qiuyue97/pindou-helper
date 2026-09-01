@@ -1,6 +1,24 @@
 export interface Me {
   username: string;
   threshold: number;
+  is_vip: boolean;
+}
+
+/** One inventory change the smart-control extractor proposes, pending confirmation. */
+export interface SmartLine {
+  code: string;
+  /** Signed: positive adds, negative deducts. */
+  delta: number;
+  /** Which part of the user's sentence produced this row. */
+  source?: string;
+}
+
+export interface SmartExtractOut {
+  lines: SmartLine[];
+  /** Anything the extractor could not turn into a row, echoed back for the user. */
+  unresolved?: string[];
+  /** Which model actually answered — the request falls through a priority list. */
+  model?: string;
 }
 
 export interface InventoryRow {
@@ -106,4 +124,27 @@ export interface BatchPayload {
 export interface SinglePayload {
   code: string;
   qty?: number;
+}
+
+export interface PatternJob {
+  id: number;
+  status: 'pending' | 'running' | 'done' | 'failed';
+  bead_list: string;
+  md_table: string;
+  note: string;
+  model: string;
+  error: string;
+  /** false = the images held no colour-code table; bead_list is empty. */
+  extracted: boolean;
+  seen: boolean;
+  image_count: number;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface PatternJobSummary {
+  jobs: PatternJob[];
+  /** Finished but not yet looked at — this is what lights the red dot. */
+  unseen: number;
+  running: number;
 }

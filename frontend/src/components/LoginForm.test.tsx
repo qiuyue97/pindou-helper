@@ -56,19 +56,17 @@ describe('LoginForm', () => {
     await waitFor(() => expect(lastRequest('POST', '/api/auth/register')).toBeDefined());
   });
 
-  test('the selected tab, the lede and the fields all change with the mode', async () => {
+  test('the selected tab and the fields both change with the mode', async () => {
     mockFetch({ 'GET /api/auth/me': { status: 401, body: { detail: 'not authenticated' } } });
     setup();
     // Login mode: no confirm field, login tab selected.
     expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByLabelText('确认密码')).not.toBeInTheDocument();
-    const loginLede = screen.getByTestId('auth-lede').textContent;
 
     await userEvent.click(screen.getByRole('tab', { name: '注册' }));
     expect(screen.getByRole('tab', { name: '注册' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'false');
     expect(screen.getByLabelText('确认密码')).toBeInTheDocument();
-    expect(screen.getByTestId('auth-lede').textContent).not.toBe(loginLede);
   });
 
   test('register refuses mismatched passwords without calling the server', async () => {

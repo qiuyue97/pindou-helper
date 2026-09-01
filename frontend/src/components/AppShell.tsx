@@ -1,6 +1,8 @@
 import { History, LogOut, Palette, SwatchBook, Boxes } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { greetingFor } from '../lib/greeting';
+import { useVip } from '../state/useVip';
+import VipBadge from './VipBadge';
 import { useAuth } from '../state/AuthContext';
 
 const TABS = [
@@ -12,6 +14,7 @@ const TABS = [
 
 export default function AppShell() {
   const { me, logout } = useAuth();
+  const { isVip } = useVip();
 
   return (
     <div className="app">
@@ -27,6 +30,7 @@ export default function AppShell() {
         </nav>
         <div className="topbar-right">
           <span className="greeting">{greetingFor()}，</span>
+          {isVip && <VipBadge />}
           <span className="username">{me?.username}</span>
           <button type="button" className="ghost" onClick={() => void logout()}>
             <LogOut size={15} aria-hidden="true" />

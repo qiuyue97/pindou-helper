@@ -25,6 +25,19 @@ services:
       PINDOU_COOKIE_SECURE: ${PINDOU_COOKIE_SECURE:-1}
       # 影响服务端日志时间戳；界面时间用浏览器本地时区。
       TZ: ${TZ:-Asia/Shanghai}
+      # 智能管控（VIP）用的 LLM 网关。不填则该功能返回 503，其余功能不受影响。
+      PINDOU_LLM_BASE_URL: ${PINDOU_LLM_BASE_URL:-}
+      PINDOU_LLM_API_KEY: ${PINDOU_LLM_API_KEY:-}
+      PINDOU_LLM_MODELS: ${PINDOU_LLM_MODELS:-}
+      PINDOU_LLM_TIMEOUT: ${PINDOU_LLM_TIMEOUT:-60}
+      # 拼豆图纸识别（VIP）。不填则该功能返回 503。
+      PINDOU_FASTGPT_BASE_URL: ${PINDOU_FASTGPT_BASE_URL:-}
+      PINDOU_FASTGPT_API_KEY: ${PINDOU_FASTGPT_API_KEY:-}
+      PINDOU_FASTGPT_APP_ID: ${PINDOU_FASTGPT_APP_ID:-}
+      PINDOU_FASTGPT_MODELS: ${PINDOU_FASTGPT_MODELS:-}
+      PINDOU_FASTGPT_TIMEOUT: ${PINDOU_FASTGPT_TIMEOUT:-1200}
+      # 原图存在数据卷里，跟着 pindou-data 一起备份。
+      PINDOU_UPLOAD_DIR: /data/uploads
     volumes:
       # SQLite 在这里。备份这一个卷就等于备份全部数据。
       - pindou-data:/data

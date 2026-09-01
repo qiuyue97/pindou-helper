@@ -69,7 +69,7 @@
 - 三档配色：**负数标红**、**低于阈值标橙**、正常
 - **批量补货 / 扣减**：粘贴多行 `色号,数量`，中文逗号和空格都认，边输入边预览，全部有效才应用
 - `ALL,100` 通配符，范围跟随页面选择的 221/291
-- 需求核对、缺货清单（可一键复制）
+- 按图扣减（对照图纸需求核对库存，可一键扣减）、缺货清单（可一键复制）
 
 ### 操作历史 · 撤销与编辑任意一步
 
@@ -161,6 +161,18 @@ location / {
 | `TZ` | `Asia/Shanghai` | 只影响服务端日志时间；界面时间用浏览器本地时区 |
 | `PINDOU_PORT` | `8000` | 宿主机映射端口。容器内固定 8000，宿主机端口冲突时改这个 |
 
+**开通 VIP**：VIP 没有自助入口，也没有对外接口——只有能碰到数据库的人才能改，
+这是刻意的。用镜像里自带的脚本：
+
+```bash
+docker compose exec pindou python scripts/set_vip.py list      # 看谁是 VIP
+docker compose exec pindou python scripts/set_vip.py grant wlh # 开通
+docker compose exec pindou python scripts/set_vip.py revoke wlh
+```
+
+改动立刻生效，用户不需要重新登录：会话令牌里只有用户 id，权限每次请求都重新读库。
+服务端对每个 VIP 接口都做校验（`require_vip`），前端隐藏按钮只是体验，不是权限。
+
 **数据与备份**：SQLite 在名为 `pindou-data` 的卷里（容器内 `/data/pindou.db`）。
 备份这一个文件就等于备份了全部数据。
 
@@ -207,7 +219,7 @@ npm run dev
 ```bash
 # 测试
 cd frontend && npm test && npm run typecheck
-cd backend  && .venv/Scripts/python -m pytest -q && .venv/Scripts/python -m ruff check app tests
+cd backend  && .venv/Scripts/python -m pytest -q && .venv/Scripts/python -m ruff check app tests scripts
 ```
 
 重新生成色卡（改过 `shared/mard-291.txt` 之后）：

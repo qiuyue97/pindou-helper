@@ -69,6 +69,11 @@ RUN pip install .
 # 而不是碰巧命中了当前目录下的 ./app。打包配置退化时构建会在这里失败。
 RUN cd / && python -c "from app.catalog import BASE; assert len(BASE) == 291, len(BASE); print('catalogue ok:', len(BASE))"
 
+# 运维脚本（开通 VIP 等）。不是包的一部分，pip install 不会带上，必须单独拷，
+# 否则容器里根本没有这个文件——而 NAS 恰恰是最需要它的地方。
+COPY backend/scripts ./scripts
+RUN python scripts/set_vip.py --help > /dev/null && echo 'admin scripts ok'
+
 COPY --from=web /build/frontend/dist /app/static
 
 # 非 root 运行。/data 在这里建好并授权，命名卷首次创建时会继承这个属主。

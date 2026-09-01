@@ -1,16 +1,23 @@
-import { ClipboardCheck, PackageMinus, PackagePlus, Plus, TriangleAlert } from 'lucide-react';
+import { ClipboardCheck, PackageMinus, PackagePlus, Sparkles, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
-import AddCodeDialog from '../components/AddCodeDialog';
 import BatchDialog from '../components/BatchDialog';
 import CheckDialog from '../components/CheckDialog';
 import InventoryTable from '../components/InventoryTable';
+import SmartControlDialog from '../components/SmartControlDialog';
 import StockoutView from '../components/StockoutView';
 import ThresholdControl from '../components/ThresholdControl';
 import type { CandidateSet } from '../color/match';
+import VipBadge from '../components/VipBadge';
+import { useVip } from '../state/useVip';
+import { usePatternJobs } from '../api/hooks';
 
-type Dialog = 'add' | 'batch-add' | 'batch-deduct' | 'check' | null;
+type Dialog = 'smart' | 'batch-add' | 'batch-deduct' | 'check' | null;
 
 export default function InventoryPage() {
+  const { isVip, guard } = useVip();
+  const { data: patterns } = usePatternJobs(isVip);
+  // 后台识别完成但还没看过 —— 在按钮上点个红点提示。
+  const unseen = patterns?.unseen ?? 0;
   const [dialog, setDialog] = useState<Dialog>(null);
   // Also decides what an ALL row in the batch dialogs covers.
   const [scopeSet, setScopeSet] = useState<CandidateSet>('221');
@@ -33,9 +40,16 @@ export default function InventoryPage() {
             </label>
           ))}
         </div>
-        <button type="button" onClick={() => setDialog('add')}>
-          <Plus size={15} aria-hidden="true" />
-          添加色号
+        {/* Replaces the old 添加色号 button, which only duplicated what editing a
+            quantity in the table below already does. */}
+        <button
+          type="button"
+          className={`vip-action${isVip ? '' : ' is-locked'}`}
+          onClick={guard(() => setDialog('smart'))}
+        >
+          <Sparkles size={15} aria-hidden="true" />
+          智能管控
+          <VipBadge locked={!isVip} />
         </button>
         <button type="button" onClick={() => setDialog('batch-add')}>
           <PackagePlus size={15} aria-hidden="true" />
@@ -45,9 +59,12 @@ export default function InventoryPage() {
           <PackageMinus size={15} aria-hidden="true" />
           批量扣减
         </button>
-        <button type="button" onClick={() => setDialog('check')}>
+        <button type="button" className="with-dot" onClick={() => setDialog('check')}>
           <ClipboardCheck size={15} aria-hidden="true" />
-          需求核对
+          按图扣减
+          {unseen > 0 && (
+            <span className="dot" aria-label={`${unseen} 个识别结果待查看`} role="status" />
+          )}
         </button>
         <ThresholdControl />
       </div>
@@ -60,7 +77,7 @@ export default function InventoryPage() {
       </h2>
       <StockoutView />
 
-      {dialog === 'add' && <AddCodeDialog onClose={close} />}
+      {dialog === 'smart' && <SmartControlDialog onClose={close} />}
       {dialog === 'batch-add' && <BatchDialog mode="add" scopeSet={scopeSet} onClose={close} />}
       {dialog === 'batch-deduct' && (
         <BatchDialog mode="deduct" scopeSet={scopeSet} onClose={close} />

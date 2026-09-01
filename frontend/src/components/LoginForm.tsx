@@ -76,12 +76,6 @@ export default function LoginForm() {
         ))}
       </div>
 
-      <p className="auth-lede" data-testid="auth-lede">
-        {isRegister
-          ? '创建一个新账号。豆仓从空白开始，数据只属于这个账号。'
-          : '用已有账号登录，继续管理你的豆仓。'}
-      </p>
-
       <form onSubmit={onSubmit}>
         <label htmlFor="username">用户名</label>
         <input

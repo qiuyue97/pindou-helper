@@ -6,7 +6,7 @@ def test_register_login_me_flow(client):
         "/api/auth/register", json={"username": "amy", "password": "password123"}, headers=XRW
     )
     assert r.status_code == 200
-    assert r.json() == {"username": "amy", "threshold": 500}
+    assert r.json() == {"username": "amy", "threshold": 500, "is_vip": False}
     assert client.cookies.get("session")
 
     client.cookies.clear()

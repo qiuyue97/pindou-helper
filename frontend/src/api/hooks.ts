@@ -1,6 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet } from './client';
-import type { ColorRow, InventoryRow, OperationRow, StockoutOut } from './types';
+import type {
+  ColorRow,
+  InventoryRow,
+  OperationRow,
+  PatternJobSummary,
+  StockoutOut,
+} from './types';
 
 export function useInventory() {
   return useQuery({
@@ -24,6 +30,20 @@ export function useStockout() {
   return useQuery({
     queryKey: ['stockout'],
     queryFn: () => apiGet<StockoutOut>('/api/inventory/stockout'),
+  });
+}
+
+/**
+ * Recognition runs in a background thread on the server, so the only way to
+ * learn it finished is to ask. Poll briskly while something is running and
+ * slowly otherwise; `enabled` keeps normal accounts from polling a 403.
+ */
+export function usePatternJobs(enabled: boolean) {
+  return useQuery({
+    queryKey: ['patterns'],
+    enabled,
+    queryFn: () => apiGet<PatternJobSummary>('/api/patterns'),
+    refetchInterval: (query) => (query.state.data?.running ? 3000 : 30000),
   });
 }
 

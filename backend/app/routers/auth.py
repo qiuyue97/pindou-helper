@@ -19,7 +19,7 @@ router = APIRouter()
 
 def _issue(resp: Response, user: User) -> AuthOut:
     set_session_cookie(resp, make_token(user.id))
-    return AuthOut(username=user.username, threshold=user.threshold)
+    return AuthOut(username=user.username, threshold=user.threshold, is_vip=user.is_vip)
 
 
 @router.post("/auth/register", response_model=AuthOut)
@@ -49,7 +49,7 @@ def logout(resp: Response) -> None:
 
 @router.get("/auth/me", response_model=AuthOut)
 def me(user: User = Depends(get_current_user)) -> AuthOut:
-    return AuthOut(username=user.username, threshold=user.threshold)
+    return AuthOut(username=user.username, threshold=user.threshold, is_vip=user.is_vip)
 
 
 @router.patch("/settings", response_model=SettingsOut)

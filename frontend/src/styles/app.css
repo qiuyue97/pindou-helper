@@ -49,15 +49,15 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .login { max-width: 22rem; margin: 4rem auto; padding: 0 1rem; }
 .login form { display: grid; gap: 0.35rem; }
 .login input { padding: 0.45rem; border: 1px solid var(--line); border-radius: 4px; }
-.login button[type='submit'] { margin-top: 0.8rem; padding: 0.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 4px; }
+.login button[type='submit'] { justify-content: center; margin-top: 0.8rem; padding: 0.5rem; background: var(--accent); color: #fff; border: 0; border-radius: 4px; }
 .linklike { background: none; border: 0; color: var(--accent); padding: 0.6rem 0; text-decoration: underline; }
 
 /* Login vs register used to differ only in one button's label, which was easy
    to miss. The selected tab, the lede and the extra fields now all move. */
-.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 1rem 0 0.6rem; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
-.auth-tab { padding: 0.45rem; border: 0; border-radius: 5px; background: none; color: var(--muted); font-weight: 600; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin: 1rem 0 0.9rem; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+/* Buttons are inline-flex globally, so the label needs explicit centring. */
+.auth-tab { justify-content: center; padding: 0.45rem; border: 0; border-radius: 5px; background: none; color: var(--muted); font-weight: 600; }
 .auth-tab[aria-selected='true'] { background: var(--surface); color: var(--accent); box-shadow: var(--shadow); }
-.auth-lede { margin: 0 0 0.9rem; color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
 .field-hint { margin: -0.1rem 0 0.2rem; color: var(--muted); font-size: 0.75rem; }
 /* A register form is a heavier commitment than a login, so give it a visible
    accent edge rather than leaving the two screens near-identical. */
@@ -205,6 +205,78 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .hex-cell:hover { border-color: var(--line-strong); background: var(--surface); }
 .hex-input { border-color: var(--accent); background: var(--surface); text-transform: uppercase; }
 .advanced-tables { display: flex; gap: 1rem; flex-wrap: wrap; }
+
+/* ---- VIP ---- */
+/* The badge is gold on purpose: it has to read as "different tier" at a glance,
+   which is the one place in this UI where the green accent would not. */
+.vip-badge { display: inline-flex; align-items: center; gap: 2px; padding: 0.05rem 0.35rem; border-radius: 999px; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.02em; color: #6b4708; background: linear-gradient(135deg, #f7dfa5, #e8b64c); border: 1px solid #d9a63c; }
+.vip-badge.is-locked { color: #8a7c60; background: #f0ece2; border-color: var(--line-strong); }
+
+/* A locked VIP action stays fully visible and clickable — clicking is how the
+   user finds out it is a paid feature — so it is dimmed, never disabled. */
+.vip-action { display: inline-flex; align-items: center; gap: 0.35rem; }
+.vip-action.is-locked { color: var(--muted); }
+
+.vip-block { margin: 0.8rem 0; padding: 0.6rem 0.7rem; border: 1px dashed var(--line-strong); border-radius: var(--radius); background: var(--bg); }
+.vip-block.is-locked { opacity: 0.85; }
+.vip-block-head { display: flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.5rem; }
+.vip-block-head .muted { font-weight: 400; font-size: 0.75rem; }
+.vip-locked-cta { display: inline-flex; align-items: center; gap: 0.4rem; width: 100%; justify-content: center; padding: 0.6rem; border: 1px dashed var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--muted); }
+
+/* 后台识别完成的红点。按钮本身是 inline-flex，所以要给它 relative 定位。 */
+.with-dot { position: relative; }
+.with-dot .dot { position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); border: 1.5px solid var(--surface); }
+.start-recognise { margin-left: 0.5rem; }
+.job-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.8rem; }
+.job-list li { display: flex; align-items: center; gap: 0.35rem; }
+/* 说明文字占满剩余宽度，按钮靠右成一组 */
+.job-list .job-note { flex: 1; min-width: 0; }
+.job-list .icon-only { padding: 0.25rem; color: var(--muted); border: 1px solid transparent; border-radius: 4px; background: none; }
+.job-list .icon-only:hover { border-color: var(--line-strong); background: var(--surface); }
+.job-list .icon-only.danger:hover { color: var(--danger); border-color: var(--danger); }
+
+/* 明细表可能有十几列（每张图一列），横向单独滚动，别把弹窗撑破 */
+.table-scroll { overflow-x: auto; }
+.pattern-table th button.linklike { padding: 0; text-decoration: underline; }
+.pattern-table .summary-row td { font-weight: 600; background: var(--bg); }
+/* 可缩放的图片查看器。overflow:hidden 让放大的部分被裁在框里，而不是把弹窗撑大。 */
+.viewer { display: grid; gap: 0.4rem; }
+.viewer-controls { display: flex; align-items: center; gap: 0.3rem; }
+.viewer-controls button { padding: 0.3rem; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); }
+.viewer-controls .muted { margin-left: 0.2rem; font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+.viewer-box { overflow: hidden; max-height: 65vh; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); display: grid; place-items: center; touch-action: none; }
+.viewer-box.is-zoomed { cursor: grab; }
+.viewer-box.is-zoomed:active { cursor: grabbing; }
+/* 以图片自身中心缩放：origin 放中心后，scale 只管放大、translate 只管平移，
+   不用再把光标坐标换算到图片坐标系——之前的错位就出在那次换算上。 */
+.viewer-box img { display: block; max-width: 100%; max-height: 65vh; transform-origin: center; user-select: none; -webkit-user-drag: none; }
+.viewer-hint { margin: 0; font-size: 0.75rem; }
+.job-list button { padding: 0.25rem 0.5rem; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); }
+.job-list li.is-unseen button { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.spin { animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.image-drop { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.8rem; border: 1px dashed var(--accent); border-radius: 5px; color: var(--accent); background: var(--accent-soft); cursor: pointer; font-size: 0.85rem; }
+.image-grid { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 0.4rem; margin: 0.6rem 0 0; padding: 0; }
+.image-grid li { position: relative; aspect-ratio: 1; }
+.image-grid img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+.image-grid button { position: absolute; top: -5px; right: -5px; width: 18px; height: 18px; padding: 0; display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--fg); }
+
+/* 可编辑的识别结果表。每列给固定宽度，改内容时表格不会跳——同 .inv-qty 的
+   教训：输入框自带约 20 字符的固有宽度，size={1} 把它去掉，宽度完全由 CSS 定。 */
+.smart-edit td { vertical-align: middle; }
+.smart-edit input, .smart-edit select { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--surface); color: inherit; min-width: 0; }
+.smart-edit .cell-code { width: 6rem; text-transform: uppercase; }
+.smart-edit .cell-qty { width: 6rem; text-align: right; font-variant-numeric: tabular-nums; }
+.smart-edit .cell-sign { width: 6.5rem; }
+.smart-edit .cell-source { font-size: 0.8rem; }
+.smart-edit tr.bad .cell-source { color: var(--danger); }
+.smart-edit .icon-only { padding: 0.3rem; color: var(--muted); }
+.smart-edit .icon-only:hover { color: var(--danger); }
+.add-row { margin-top: 0.5rem; color: var(--accent); }
+
+.model-tag { margin-left: 0.4rem; padding: 0.05rem 0.35rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .inv { display: grid; gap: 1.2rem; }
 .inv-section-title { font-size: 0.9rem; margin: 0 0 0.4rem; color: var(--muted); font-weight: 600; }
 .inv-grid { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: flex-start; }
