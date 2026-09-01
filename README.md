@@ -68,7 +68,8 @@
 - 全部色号默认显示，没有记录的按 0 显示
 - 三档配色：**负数标红**、**低于阈值标橙**、正常
 - **批量补货 / 扣减**：粘贴多行 `色号,数量`，中文逗号和空格都认，边输入边预览，全部有效才应用
-- `ALL,100` 通配符，范围跟随页面选择的 221/291
+- 通配符：`ALL,100` 作用于全部，`A*,1000` 只作用于 A 系列（`ZG*` 同理），范围跟随页面选择的 221/291
+- 色号与通配符都不区分大小写，`all`、`a*` 一样可用
 - 按图扣减（对照图纸需求核对库存，可一键扣减）、缺货清单（可一键复制）
 
 ### 操作历史 · 撤销与编辑任意一步
@@ -82,7 +83,26 @@
 ### 我的色卡
 
 每个账号可以修改任意标准色号的 HEX、新增自己的色号。改动只作用于自己，
-并立刻影响匹配结果。被库存或历史引用的自定义色号不允许删除。
+并立刻影响匹配结果。被库存或历史引用的自定义色号不允许删除。表格里可以直接
+点开 HEX 就地修改，也可以用取色器。
+
+### VIP 功能
+
+两个需要外部模型的功能只对 VIP 账号开放。普通账号**看得到入口**（带金色 VIP
+标记），点击会提示升级——刻意不隐藏，否则用户不知道自己错过了什么。
+
+**智能管控** —— 用一句话增减豆仓。「A1 补 200，B3 用掉了 50」经 LLM 抽取成
+结构化的增减条目，在可编辑表格里确认（色号、正负号、数量都能改，可增删行）
+后才提交。抽取走 OpenAI 兼容网关的**原生 json_schema**，不是解析自由文本；
+配多个模型时按顺序降级。
+
+**拼豆图纸AI抽取** —— 上传图纸（最多 10 张），识别底部的色号统计区域，得到
+`色号, 数量` 清单，一键填进「按图扣减」核对并扣减。识别在后台跑，提交后立刻
+返回，可以关掉窗口去做别的；完成后「按图扣减」按钮右上角亮红点。原图留存在
+数据卷里，可随时回看（支持滚轮 / 双指捏合缩放）。
+
+> 权限由服务端强制：每个 VIP 接口都依赖 `require_vip`，标志每次请求从数据库读，
+> 会话令牌里只有用户 id。前端隐藏按钮只是体验，不是权限——直接 curl 也过不去。
 
 ---
 
@@ -161,16 +181,59 @@ location / {
 | `TZ` | `Asia/Shanghai` | 只影响服务端日志时间；界面时间用浏览器本地时区 |
 | `PINDOU_PORT` | `8000` | 宿主机映射端口。容器内固定 8000，宿主机端口冲突时改这个 |
 
-**开通 VIP**：VIP 没有自助入口，也没有对外接口——只有能碰到数据库的人才能改，
-这是刻意的。用镜像里自带的脚本：
+VIP 功能要用的外部服务，**不配也不影响其余功能**——对应接口返回 503：
+
+| 变量 | 说明 |
+|---|---|
+| `PINDOU_LLM_BASE_URL` / `_API_KEY` | 智能管控用的 OpenAI 兼容网关 |
+| `PINDOU_LLM_MODELS` | 逗号分隔，按顺序降级。要求支持原生 `json_schema` |
+| `PINDOU_FASTGPT_BASE_URL` / `_API_KEY` / `_APP_ID` | 图纸识别用的 FastGPT 插件应用 |
+| `PINDOU_FASTGPT_MODELS` | 逗号分隔，按顺序降级。工作流的 `model_name` 入参必须接到 AI 节点的模型上，否则改了不生效 |
+| `PINDOU_FASTGPT_TIMEOUT` | 默认 1200 秒。识别在后台线程里跑，给足即可 |
+| `PINDOU_UPLOAD_DIR` | 用户原图存放目录，默认 `/data/uploads`，**必须落在持久卷上** |
+
+### 开通 / 取消 VIP
+
+VIP 没有自助入口，也没有对外接口——只有能碰到数据库的人才改得动，这是刻意的。
+镜像里自带了运维脚本：
 
 ```bash
-docker compose exec pindou python scripts/set_vip.py list      # 看谁是 VIP
-docker compose exec pindou python scripts/set_vip.py grant wlh # 开通
-docker compose exec pindou python scripts/set_vip.py revoke wlh
+cd /volume2/docker/pindou-helper          # 换成你的部署目录
+
+# 看谁是 VIP（VIP 的行会以 "VIP " 开头）
+docker compose exec pindou python scripts/set_vip.py list
+
+# 开通
+docker compose exec pindou python scripts/set_vip.py grant <用户名>
+
+# 取消
+docker compose exec pindou python scripts/set_vip.py revoke <用户名>
 ```
 
-改动立刻生效，用户不需要重新登录：会话令牌里只有用户 id，权限每次请求都重新读库。
+输出示例：
+
+```
+数据库：sqlite:////data/pindou.db
+
+    用户名                     注册时间
+VIP wlh                     2026-08-31 13:23
+    someone                 2026-09-01 09:10
+
+共 2 个账号，其中 VIP 1 个
+```
+
+行为说明：
+
+- **立刻生效，用户不需要重新登录**。会话令牌里只有用户 id，`is_vip` 每次请求
+  都重新读库，所以取消 VIP 下一个请求就挡住了。
+- **幂等**。对已经是 VIP 的账号再 `grant`，只会提示「无需改动」。
+- **用户名写错会以退出码 1 失败**，并把现有账号列出来，方便直接改。
+- 不在容器里跑时（比如本地开发），脚本会读 `PINDOU_DB_URL`；也可以显式指定：
+
+  ```bash
+  cd backend && python scripts/set_vip.py grant wlh --db sqlite:////data/pindou.db
+  ```
+
 服务端对每个 VIP 接口都做校验（`require_vip`），前端隐藏按钮只是体验，不是权限。
 
 **数据与备份**：SQLite 在名为 `pindou-data` 的卷里（容器内 `/data/pindou.db`）。
@@ -240,16 +303,21 @@ cd frontend && npm run gen:catalog
 backend/app/
   replay.py          事件重放引擎（纯函数，撤销/编辑任意一步的基础）
   catalog.py         291 色基准表 + 每用户的覆盖与自定义
-  text_parse.py      "色号,数量" 容错解析（中文逗号、空格、ALL 通配符）
-  routers/           auth · inventory · operations · colors
+  text_parse.py      "色号,数量" 容错解析（中文逗号、空格、ALL 与 A* 通配符）
+  llm.py             智能管控：prompt、json_schema、多模型降级
+  fastgpt.py         图纸识别：预签名上传 + 调插件；原图本地留存
+  deps.py            require_vip —— 服务端的 VIP 门禁
+  routers/           auth · inventory · operations · colors · smart · patterns
+  scripts/set_vip.py 运维脚本：开通 / 取消 VIP
 frontend/src/
   color/             颜色引擎：CIELAB、CIEDE2000、匹配排序、画点选取（纯函数，无 DOM）
-  lib/               行解析（与后端保持一致）、绘图几何、取色几何
+  lib/               行解析（与后端保持一致）、绘图几何、取色几何、图片缩放、md 表解析
   components/        取色器、匹配面板、颜色空间图、库存表、各类对话框
+  state/useVip.ts    读服务端的 is_vip；VIP 专属操作的统一包装
 shared/mard-291.txt  色卡数据源
 ```
 
-284 个自动化测试（前端 vitest 215 + 后端 pytest 69）。
+459 个自动化测试（前端 vitest 308 + 后端 pytest 151）。
 颜色引擎和几何计算都是纯函数并单独测试；`jsdom` 没有 canvas，
 所以图形组件只测 DOM 和几何，不做像素断言。
 
@@ -266,6 +334,9 @@ shared/mard-291.txt  色卡数据源
 - 移动端只针对 iOS Safari 做过适配。
 - 没有密码找回，也没有登录失败限流。这是给自己和家人用的自托管工具，
   不建议直接暴露到公网。
+- **VIP 只能改数据库开通**，没有界面也没有接口——见「开通 / 取消 VIP」。
+- 图纸识别在**进程内的后台线程**里跑。容器重启会丢掉正在跑的任务（状态停在
+  `running`），重新提交即可；已完成的结果在库里，不受影响。
 
 ## 许可
 
