@@ -115,6 +115,12 @@ export default function InventoryTable({ scopeSet }: { scopeSet: CandidateSet })
                       {editing === c.code ? (
                         <input
                           autoFocus
+                          // An <input> without `size` reports an intrinsic width of ~20
+                          // characters. The column is max-content sized, so that width
+                          // — not the CSS `width:100%` — decided how wide the cell got,
+                          // and clicking a quantity stretched BOTH boxes from 46px to
+                          // 126px. size=1 removes the intrinsic contribution entirely.
+                          size={1}
                           aria-label={`${c.code} 数量`}
                           className="inv-qty-input"
                           value={draft}

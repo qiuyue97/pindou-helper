@@ -48,10 +48,50 @@ describe('LoginForm', () => {
       'POST /api/auth/register': { body: { username: 'newbie', threshold: 500 } },
     });
     setup();
-    await userEvent.click(screen.getByRole('button', { name: '没有账号？注册' }));
+    await userEvent.click(screen.getByRole('tab', { name: '注册' }));
     await userEvent.type(screen.getByLabelText('用户名'), 'newbie');
     await userEvent.type(screen.getByLabelText('密码'), 'password123');
+    await userEvent.type(screen.getByLabelText('确认密码'), 'password123');
     await userEvent.click(screen.getByRole('button', { name: '注册' }));
     await waitFor(() => expect(lastRequest('POST', '/api/auth/register')).toBeDefined());
+  });
+
+  test('the selected tab, the lede and the fields all change with the mode', async () => {
+    mockFetch({ 'GET /api/auth/me': { status: 401, body: { detail: 'not authenticated' } } });
+    setup();
+    // Login mode: no confirm field, login tab selected.
+    expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByLabelText('确认密码')).not.toBeInTheDocument();
+    const loginLede = screen.getByTestId('auth-lede').textContent;
+
+    await userEvent.click(screen.getByRole('tab', { name: '注册' }));
+    expect(screen.getByRole('tab', { name: '注册' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: '登录' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByLabelText('确认密码')).toBeInTheDocument();
+    expect(screen.getByTestId('auth-lede').textContent).not.toBe(loginLede);
+  });
+
+  test('register refuses mismatched passwords without calling the server', async () => {
+    mockFetch({ 'GET /api/auth/me': { status: 401, body: { detail: 'not authenticated' } } });
+    setup();
+    await userEvent.click(screen.getByRole('tab', { name: '注册' }));
+    await userEvent.type(screen.getByLabelText('用户名'), 'newbie');
+    await userEvent.type(screen.getByLabelText('密码'), 'password123');
+    await userEvent.type(screen.getByLabelText('确认密码'), 'password124');
+    await userEvent.click(screen.getByRole('button', { name: '注册' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('两次输入的密码不一致');
+    expect(lastRequest('POST', '/api/auth/register')).toBeUndefined();
+  });
+
+  test('register rejects a username the server would reject anyway', async () => {
+    mockFetch({ 'GET /api/auth/me': { status: 401, body: { detail: 'not authenticated' } } });
+    setup();
+    await userEvent.click(screen.getByRole('tab', { name: '注册' }));
+    await userEvent.type(screen.getByLabelText('用户名'), 'ab');
+    await userEvent.type(screen.getByLabelText('密码'), 'password123');
+    await userEvent.type(screen.getByLabelText('确认密码'), 'password123');
+    await userEvent.click(screen.getByRole('button', { name: '注册' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('3–32 位');
+    expect(lastRequest('POST', '/api/auth/register')).toBeUndefined();
   });
 });

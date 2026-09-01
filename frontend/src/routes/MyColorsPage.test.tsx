@@ -72,7 +72,7 @@ describe('MyColorsPage', () => {
     });
     setup();
     await userEvent.type(await screen.findByLabelText('搜索色号'), 'A1');
-    await userEvent.click(within(await rowFor('A1')).getByRole('button', { name: '修改HEX' }));
+    await userEvent.click(within(await rowFor('A1')).getByRole('button', { name: '取色' }));
 
     const hexField = await screen.findByLabelText('十六进制');
     await userEvent.clear(hexField);
@@ -83,5 +83,59 @@ describe('MyColorsPage', () => {
     expect(JSON.parse(String(lastRequest('PUT', '/api/colors/A1')!.init!.body))).toEqual({
       hex: '112233',
     });
+  });
+
+  test('edits a hex inline, without opening the dialog', async () => {
+    mockFetch({ ...base, 'PUT /api/colors/A1': { body: { code: 'A1', hex: '112233', source: 'override', base_hex: 'E8384F' } } });
+    setup();
+    await userEvent.type(await screen.findByLabelText('搜索色号'), 'A1');
+    await userEvent.click(within(await rowFor('A1')).getByRole('button', { name: /^#/ }));
+
+    const field = await screen.findByLabelText('A1 HEX');
+    await userEvent.clear(field);
+    await userEvent.type(field, '112233{Enter}');
+
+    await waitFor(() => expect(lastRequest('PUT', '/api/colors/A1')).toBeDefined());
+    expect(JSON.parse(String(lastRequest('PUT', '/api/colors/A1')!.init!.body))).toEqual({
+      hex: '112233',
+    });
+  });
+
+  test('accepts a leading # and lowercase, and normalises them', async () => {
+    mockFetch({ ...base, 'PUT /api/colors/A1': { body: { code: 'A1', hex: 'AABBCC', source: 'override', base_hex: 'E8384F' } } });
+    setup();
+    await userEvent.type(await screen.findByLabelText('搜索色号'), 'A1');
+    await userEvent.click(within(await rowFor('A1')).getByRole('button', { name: /^#/ }));
+    const field = await screen.findByLabelText('A1 HEX');
+    await userEvent.clear(field);
+    await userEvent.type(field, '#aabbcc{Enter}');
+    await waitFor(() => expect(lastRequest('PUT', '/api/colors/A1')).toBeDefined());
+    expect(JSON.parse(String(lastRequest('PUT', '/api/colors/A1')!.init!.body))).toEqual({
+      hex: 'AABBCC',
+    });
+  });
+
+  test('rejects a malformed hex without calling the server', async () => {
+    mockFetch(base);
+    setup();
+    await userEvent.type(await screen.findByLabelText('搜索色号'), 'A1');
+    await userEvent.click(within(await rowFor('A1')).getByRole('button', { name: /^#/ }));
+    const field = await screen.findByLabelText('A1 HEX');
+    await userEvent.clear(field);
+    await userEvent.type(field, 'nope{Enter}');
+    expect(await screen.findByRole('status')).toHaveTextContent('6 位十六进制');
+    expect(lastRequest('PUT', '/api/colors/A1')).toBeUndefined();
+  });
+
+  test('Escape cancels an inline edit and sends nothing', async () => {
+    mockFetch(base);
+    setup();
+    await userEvent.type(await screen.findByLabelText('搜索色号'), 'A1');
+    await userEvent.click(within(await rowFor('A1')).getByRole('button', { name: /^#/ }));
+    const field = await screen.findByLabelText('A1 HEX');
+    await userEvent.clear(field);
+    await userEvent.type(field, '000000{Escape}');
+    await waitFor(() => expect(screen.queryByLabelText('A1 HEX')).not.toBeInTheDocument());
+    expect(lastRequest('PUT', '/api/colors/A1')).toBeUndefined();
   });
 });

@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { apiSend } from '../api/client';
 import { useApiMutation, useInventory } from '../api/hooks';
 import type { BatchLineResult, BatchOut } from '../api/types';
-import { ALL_CODE, isAllCode, scopeCodes } from '../lib/allScope';
+import { expandWildcard, isWildcard, scopeCodes } from '../lib/allScope';
 import { parseLines } from '../lib/parseLines';
 import { formatChanges } from '../lib/qty';
 import type { CandidateSet } from '../color/match';
@@ -65,15 +65,18 @@ export default function BatchDialog({
   const rows: PreviewRow[] = useMemo(() => {
     const have = new Map((inventory ?? []).map((r) => [r.code, r.quantity]));
     return parseLines(text).map((l) => {
-      // ALL is a wildcard, not a catalogue code — never flag it as unknown.
-      if (l.status === 'ok' && isAllCode(l.code)) {
+      // ALL and A* are wildcards, not catalogue codes — never flag them as
+      // unknown. A wildcard covering nothing IS an error though, otherwise a
+      // typo like "X*" would silently apply as a no-op.
+      if (l.status === 'ok' && isWildcard(l.code)) {
+        const covered = expandWildcard(l.code, allCodes) ?? [];
         return {
           lineNo: l.lineNo,
-          code: ALL_CODE,
+          code: l.code,
           qty: l.qty,
-          status: 'ok' as Status,
-          advisory: '',
-          expandsTo: allCodes.length,
+          status: (covered.length ? 'ok' : 'code_not_found') as Status,
+          advisory: covered.length ? '' : '当前范围内没有这个系列',
+          ...(covered.length ? { expandsTo: covered.length } : {}),
         };
       }
       let status: Status = l.status;
@@ -149,8 +152,10 @@ export default function BatchDialog({
         每行一条，格式 <code>色号,数量</code>（中文逗号或空格也可以）
       </label>
       <p className="muted">
-        用 <code>ALL,100</code> 表示当前 {scopeSet} 色全部各
-        {mode === 'add' ? '补' : '扣'} 100；可以和普通行混用，写在后面的行会继续累加。
+        通配符：<code>ALL,100</code> 表示当前 {scopeSet} 色全部各
+        {mode === 'add' ? '补' : '扣'} 100；<code>A*,1000</code> 只作用于 A 系列
+        （<code>ZG*</code> 同理）。色号和通配符都不区分大小写，
+        <code>all</code>、<code>a*</code> 一样可用；可以和普通行混用，写在后面的行会继续累加。
       </p>
       <textarea
         id="batch-text"

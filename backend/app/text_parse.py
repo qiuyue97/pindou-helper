@@ -6,7 +6,33 @@ _QTY_RE = re.compile(r"^\d+$")
 
 # The wildcard code a user can type to mean "every colour in the chosen scope".
 # It parses as an ordinary code; only validation and expansion treat it specially.
+# Case does not matter: parse_lines() upper-cases every code token, so "all"
+# and "All" arrive here as ALL.
 ALL_CODE = "ALL"
+
+# A series wildcard: "A*" means every A-series colour in the chosen scope.
+# Same story as ALL — it parses as an ordinary code and only expansion cares.
+_SERIES_WILDCARD_RE = re.compile(r"^([A-Za-z]+)\*$")
+
+_SERIES_PREFIX_RE = re.compile(r"^[A-Za-z]+")
+
+
+def series_of(code: str) -> str:
+    """The leading letters of a code, upper-cased. "" when it has none."""
+    m = _SERIES_PREFIX_RE.match(code)
+    return m.group(0).upper() if m else ""
+
+
+def series_wildcard(code: str | None) -> str | None:
+    """The series a wildcard code targets, or None when it is not one."""
+    if not code:
+        return None
+    m = _SERIES_WILDCARD_RE.match(code)
+    return m.group(1).upper() if m else None
+
+
+def is_wildcard(code: str | None) -> bool:
+    return code == ALL_CODE or series_wildcard(code) is not None
 
 
 def normalize(text: str) -> str:
@@ -45,18 +71,33 @@ def parse_lines(text: str) -> list[ParsedLine]:
     return out
 
 
+def expand_wildcard(code: str, scope: Sequence[str]) -> list[str] | None:
+    """The codes a wildcard covers, or None when `code` is not a wildcard.
+
+    `scope` is the ordered in-scope catalogue, so 221/291 and "include my own
+    colours" are already applied by the caller and never re-decided here.
+    """
+    if code == ALL_CODE:
+        return list(scope)
+    series = series_wildcard(code)
+    if series is None:
+        return None
+    return [c for c in scope if series_of(c) == series]
+
+
 def expand_lines(
     pairs: Iterable[tuple[str, int]], all_codes: Sequence[str]
 ) -> list[dict]:
-    """Expand any ALL row into one row per code, in place.
+    """Expand any wildcard row (ALL or A*) into one row per code, in place.
 
     Order is preserved so a later explicit row still accumulates on top of the
     wildcard (``ALL,100`` then ``A1,50`` leaves A1 at +150).
     """
     out: list[dict] = []
     for code, qty in pairs:
-        if code == ALL_CODE:
-            out.extend({"code": c, "qty": qty} for c in all_codes)
-        else:
+        expanded = expand_wildcard(code, all_codes)
+        if expanded is None:
             out.append({"code": code, "qty": qty})
+        else:
+            out.extend({"code": c, "qty": qty} for c in expanded)
     return out

@@ -132,4 +132,47 @@ describe('BatchDialog · ALL wildcard', () => {
     setup({});
     expect(screen.getByText(/ALL,100/)).toBeInTheDocument();
   });
+
+  test('a series wildcard previews the number of codes it covers', async () => {
+    mockFetch(base);
+    setup({ scopeSet: '291' });
+    await userEvent.type(screen.getByLabelText('批量输入'), 'A*,1000');
+    const preview = await screen.findByRole('table', { name: '解析预览' });
+    const row = within(preview).getAllByRole('row')[1]!;
+    expect(row).toHaveTextContent('A*');
+    // The A series has 26 colours; the row must say so rather than list them.
+    expect(row).toHaveTextContent('26 个色号');
+  });
+
+  test('a lowercase wildcard is accepted just like the uppercase one', async () => {
+    mockFetch(base);
+    setup({ scopeSet: '291' });
+    await userEvent.type(screen.getByLabelText('批量输入'), 'a*,5\nall,1');
+    const preview = await screen.findByRole('table', { name: '解析预览' });
+    const rows = within(preview).getAllByRole('row').slice(1);
+    expect(rows[0]).toHaveTextContent('26 个色号');
+    expect(rows[1]).toHaveTextContent('291 个色号');
+    expect(screen.getByRole('button', { name: '应用' })).toBeEnabled();
+  });
+
+  test('a series nothing matches is rejected instead of applying as a no-op', async () => {
+    mockFetch(base);
+    setup({ scopeSet: '291' });
+    await userEvent.type(screen.getByLabelText('批量输入'), 'X*,5');
+    const preview = await screen.findByRole('table', { name: '解析预览' });
+    expect(within(preview).getAllByRole('row')[1]!).toHaveTextContent('当前范围内没有这个系列');
+    expect(screen.getByRole('button', { name: '应用' })).toBeDisabled();
+  });
+
+  test('a special series is empty under 221 but covered under 291', async () => {
+    mockFetch(base);
+    const { unmount } = setup({ scopeSet: '221' });
+    await userEvent.type(screen.getByLabelText('批量输入'), 'ZG*,4');
+    expect(screen.getByRole('button', { name: '应用' })).toBeDisabled();
+    unmount();
+
+    setup({ scopeSet: '291' });
+    await userEvent.type(screen.getByLabelText('批量输入'), 'ZG*,4');
+    expect(await screen.findByRole('button', { name: '应用' })).toBeEnabled();
+  });
 });

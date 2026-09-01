@@ -1,6 +1,6 @@
 import { Plus } from 'lucide-react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import { ApiError, apiSend } from '../api/client';
 import { useUserColors } from '../api/hooks';
 import AddColorDialog from '../components/AddColorDialog';
@@ -23,6 +23,10 @@ export default function MyColorsPage() {
   const [query, setQuery] = useState('');
   const [editing, setEditing] = useState<{ code: string; hex: string } | null>(null);
   const [adding, setAdding] = useState(false);
+  // Inline HEX editing, so changing a colour is one click in this table rather
+  // than a round trip through a dialog.
+  const [inlineCode, setInlineCode] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
 
   const baseHexOf = useMemo(
     () => new Map((userColors ?? []).map((c) => [c.code, c.base_hex])),
@@ -33,6 +37,40 @@ export default function MyColorsPage() {
     const q = query.trim().toUpperCase();
     return q ? colors.filter((c) => c.code.startsWith(q)) : colors;
   }, [colors, query]);
+
+  const saveHex = useMutation({
+    mutationFn: (v: { code: string; hex: string }) =>
+      apiSend<unknown>('PUT', `/api/colors/${encodeURIComponent(v.code)}`, { hex: v.hex }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['colors'] }),
+  });
+
+  function startInline(code: string, hex: string) {
+    setInlineCode(code);
+    setDraft(hex);
+  }
+
+  async function commitInline(code: string) {
+    if (inlineCode !== code) return;
+    setInlineCode(null);
+    const next = draft.trim().replace(/^#/, '').toUpperCase();
+    const current = colors.find((x) => x.code === code)?.hex.toUpperCase();
+    if (next === current) return;
+    if (!/^[0-9A-F]{6}$/.test(next)) {
+      show('HEX 需为 6 位十六进制，如 3677D2');
+      return;
+    }
+    try {
+      await saveHex.mutateAsync({ code, hex: next });
+      show(`已更新 ${code}`);
+    } catch (err) {
+      show(err instanceof ApiError ? err.detail : '保存失败');
+    }
+  }
+
+  function onHexKeyDown(e: KeyboardEvent<HTMLInputElement>, code: string) {
+    if (e.key === 'Enter') void commitInline(code);
+    if (e.key === 'Escape') setInlineCode(null);
+  }
 
   const remove = useMutation({
     mutationFn: (code: string) => apiSend<void>('DELETE', `/api/colors/${encodeURIComponent(code)}`),
@@ -86,7 +124,28 @@ export default function MyColorsPage() {
               <td>
                 <span className="swatch" style={{ background: `#${c.hex}` }} />
               </td>
-              <td>#{c.hex}</td>
+              <td>
+                {inlineCode === c.code ? (
+                  <input
+                    autoFocus
+                    aria-label={`${c.code} HEX`}
+                    className="hex-input"
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => onHexKeyDown(e, c.code)}
+                    onBlur={() => void commitInline(c.code)}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="hex-cell"
+                    title={`点击直接修改 ${c.code} 的 HEX`}
+                    onClick={() => startInline(c.code, c.hex)}
+                  >
+                    #{c.hex}
+                  </button>
+                )}
+              </td>
               <td>
                 <span className="source-tag">{SOURCE_LABEL[c.source] ?? c.source}</span>{' '}
                 {c.source === 'override' && baseHexOf.get(c.code) && (
@@ -95,7 +154,7 @@ export default function MyColorsPage() {
               </td>
               <td className="opactions">
                 <button type="button" onClick={() => openEdit(c.code)}>
-                  修改HEX
+                  取色
                 </button>
                 {c.source === 'override' && (
                   <button type="button" onClick={() => void onRemove(c.code, true)}>

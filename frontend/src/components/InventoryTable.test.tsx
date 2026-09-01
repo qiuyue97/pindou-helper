@@ -115,4 +115,17 @@ describe('InventoryTable', () => {
     await userEvent.type(input, '50{Enter}');
     await waitFor(() => expect(lastRequest('PUT', '/api/inventory/A4')).toBeDefined());
   });
+
+  test('the quantity editor carries size=1 so opening it cannot widen the cell', async () => {
+    // The inventory columns are max-content sized. An <input> without `size`
+    // reports an intrinsic width of ~20 characters, which used to stretch the
+    // cell — and its colour block — from 92px to 251px the moment a quantity
+    // was clicked. jsdom does no layout, so the attribute is what we assert:
+    // it is the entire fix, and dropping it silently brings the jump back.
+    mockFetch(base);
+    setup();
+    const cell = await screen.findByTestId('cell-A2');
+    await userEvent.click(within(cell).getByRole('button'));
+    expect(await screen.findByLabelText('A2 数量')).toHaveAttribute('size', '1');
+  });
 });
