@@ -30,3 +30,32 @@ def test_parse_flags_bad_rows():
         "bad_quantity",
         "format_error",
     ]
+
+
+# ---------- 色号顺序 ----------
+
+
+def test_codes_sort_by_series_then_number_not_as_strings():
+    """A10 必须排在 A2 后面。裸字符串排序做不到这一点。"""
+    from app.text_parse import code_key
+
+    codes = ["A10", "A2", "B1", "A1", "C22", "C3", "M15", "M2"]
+    assert sorted(codes, key=code_key) == [
+        "A1", "A2", "A10", "B1", "C3", "C22", "M2", "M15",
+    ]
+
+
+def test_multi_letter_series_stay_together():
+    """291 色表里有 ZG 这样的双字母系列。"""
+    from app.text_parse import code_key
+
+    assert sorted(["ZG2", "Z1", "ZG10", "ZG1"], key=code_key) == [
+        "Z1", "ZG1", "ZG2", "ZG10",
+    ]
+
+
+def test_an_odd_code_still_sorts_deterministically():
+    """没有数字、或者带后缀的，也得有个稳定的位置，不能抛异常。"""
+    from app.text_parse import code_key
+
+    assert sorted(["A", "A1", "1", ""], key=code_key) == ["", "1", "A", "A1"]

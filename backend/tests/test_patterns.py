@@ -524,3 +524,40 @@ def test_every_image_rejected_is_still_an_error(vip_client):
     )
     assert res.status_code == 422
     assert "没有一张" in res.json()["detail"]
+
+
+# ---------- 合并与排序 ----------
+
+
+def test_the_merged_result_is_in_code_order_not_by_quantity():
+    """清单和明细表都按色号排，不按数量。
+
+    用户拿这张表对着一盒按系列摆好的豆子取货，按数量排就得一行行找。
+    """
+    from app.fastgpt import PatternResult, _merge
+
+    r = lambda t: PatternResult(True, t, "", "", "kimi-k3")  # noqa: E731
+    extracted, bead_list, md_table, note = _merge(
+        [([0], r("C3, 5\nA10, 1")), ([1], r("A2, 7\nA10, 2"))], 2
+    )
+    assert extracted
+    assert bead_list == "A2, 7\nA10, 3\nC3, 5"
+    rows = [line.split("|")[1].strip() for line in md_table.splitlines()[2:]]
+    assert rows == ["A2", "A10", "C3", "色号数量", "总豆数"]
+
+
+def test_the_detail_table_has_one_column_per_image():
+    """每次请求只送一张图，所以每一列的归属是确定的，可以自己重建。"""
+    from app.fastgpt import PatternResult, _merge
+
+    r = lambda t: PatternResult(True, t, "", "", "kimi-k3")  # noqa: E731
+    _, _, md_table, note = _merge([([0], r("A1, 5")), ([2], r("A1, 2\nB1, 9"))], 3)
+    lines = md_table.splitlines()
+    assert lines[0] == "| 色号 | 图片1 | 图片2 | 图片3 | 合计 |"
+    # 第 2 张没有结果（认不出来），列还在，只是空的
+    assert lines[2] == "| A1 | 5 |  | 2 | 7 |"
+    assert lines[3] == "| B1 |  |  | 9 | 9 |"
+    assert lines[-2] == "| 色号数量 | 1 | 0 | 2 | 2 |"
+    assert lines[-1] == "| 总豆数 | 5 | 0 | 11 | 16 |"
+    # 那句话按合并后的总数写，不是把模型每次的"已从 1 张图片中…"拼起来
+    assert note == "已从 2 张图片中共提取到 2 种色号，合计 16 颗拼豆。"

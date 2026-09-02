@@ -24,7 +24,7 @@ import httpx
 
 from app.config import Settings
 from app.imaging import INLINE_LIMIT, fit_inline, normalise_name, sniff_image
-from app.text_parse import parse_lines
+from app.text_parse import code_key, parse_lines
 
 log = logging.getLogger("pindou.fastgpt")
 
@@ -175,10 +175,7 @@ def _table(per_image: list[Counter[str]]) -> str:
     各批的表不能直接拼：模型返回的表列是它自己编的，并行跑出来的几张对不齐。
     现在一张一个请求，每一列的归属是确定的，重建反而比拼接更准。
     """
-    codes = sorted(
-        {c for col in per_image for c in col},
-        key=lambda c: (-sum(col.get(c, 0) for col in per_image), c),
-    )
+    codes = sorted({c for col in per_image for c in col}, key=code_key)
     if not codes:
         return ""
     n = len(per_image)
@@ -224,7 +221,8 @@ def _merge(
         else:
             attributable = False
 
-    ordered = sorted(total.items(), key=lambda kv: (-kv[1], kv[0]))
+    # 按色号顺序，不按数量：这张清单要跟一盒按系列摆好的豆子对着看
+    ordered = sorted(total.items(), key=lambda kv: code_key(kv[0]))
     bead_list = "\n".join(f"{code}, {qty}" for code, qty in ordered)
     if attributable:
         md_table = _table(per_image)

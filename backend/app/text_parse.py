@@ -23,6 +23,19 @@ def series_of(code: str) -> str:
     return m.group(0).upper() if m else ""
 
 
+def code_key(code: str) -> tuple[str, int, str]:
+    """按色号本身的顺序排：先系列 A-Z，再序号升序。
+
+    不能直接拿字符串排——那样 A10 会排在 A2 前面。用户是对着一盒按系列和序号
+    摆好的豆子看这张表的，顺序对不上就得一行一行找。
+    """
+    m = re.match(r"^([A-Za-z]*)(\d*)(.*)$", code.strip())
+    if not m:
+        return (code.upper(), 0, "")
+    series, num, rest = m.groups()
+    return (series.upper(), int(num) if num else 0, rest.upper())
+
+
 def series_wildcard(code: str | None) -> str | None:
     """The series a wildcard code targets, or None when it is not one."""
     if not code:
