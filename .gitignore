@@ -18,3 +18,7 @@ docs/superpowers/
 
 # 探针脚本打真实接口后落下的原始响应记录，只用于本机排查
 backend/scripts/_*.json
+
+# setuptools 的构建产物。pip install 会重新生成，跟踪它只会让每次装包都脏一片文件。
+backend/build/
+backend/*.egg-info/
