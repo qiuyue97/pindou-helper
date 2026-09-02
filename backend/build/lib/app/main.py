@@ -39,9 +39,25 @@ def create_app() -> FastAPI:
     def health() -> dict:
         return {"status": "ok"}
 
-    from app.routers import auth, colors, inventory, operations
+    from app.routers import (
+        auth,
+        colors,
+        inventory,
+        operations,
+        patterns,
+        sheets,
+        smart,
+    )
 
-    for r in (auth.router, inventory.router, operations.router, colors.router):
+    for r in (
+        auth.router,
+        inventory.router,
+        operations.router,
+        colors.router,
+        smart.router,
+        patterns.router,
+        sheets.router,
+    ):
         app.include_router(r, prefix="/api")
 
     if settings.static_dir:

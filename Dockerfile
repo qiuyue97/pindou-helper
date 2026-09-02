@@ -69,6 +69,11 @@ RUN pip install .
 # 而不是碰巧命中了当前目录下的 ./app。打包配置退化时构建会在这里失败。
 RUN cd / && python -c "from app.catalog import BASE; assert len(BASE) == 291, len(BASE); print('catalogue ok:', len(BASE))"
 
+# CV 依赖装没装对，构建时就该知道，而不是等第一个用户上传图纸才发现。同样换到 /
+# 目录 import，证明装完的包是自包含的。顺带把版本打出来：本机开发用的是 conda 的
+# cv2 5.x，容器里装的是 pip 的 headless 轮子，两边版本对不上时这行日志是唯一线索。
+RUN cd / && python -c "import cv2, sklearn; from app.sheet import pipeline; print('cv pipeline ok: cv2', cv2.__version__, '/ sklearn', sklearn.__version__)"
+
 # 运维脚本（开通 VIP 等）。不是包的一部分，pip install 不会带上，必须单独拷，
 # 否则容器里根本没有这个文件——而 NAS 恰恰是最需要它的地方。
 COPY backend/scripts ./scripts

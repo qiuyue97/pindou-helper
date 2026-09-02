@@ -11,7 +11,7 @@ from app.models import Operation, User
 from app.replay import OP_TYPES, iter_lines
 from app.schemas import ChangeRow, ChangesOut, ImpactIn, OpEntry, OperationRow, OpPatchIn
 from app.service import impact, rematerialize
-from app.text_parse import ALL_CODE, parse_lines
+from app.text_parse import ALL_CODE, is_wildcard, parse_lines
 
 router = APIRouter()
 
@@ -26,11 +26,36 @@ _LABELS = {
 }
 
 
-def _scope_label(op: Operation) -> str | None:
+def _scope_set(op: Operation) -> str | None:
+    """The candidate set frozen into a wildcard operation, or None.
+
+    "all" is the kind written before series wildcards existed; both mean the
+    same thing here — this operation had a scope pinned at the time it ran.
+    """
     scope = op.payload.get("scope") if isinstance(op.payload, dict) else None
-    if not scope or scope.get("kind") != "all":
+    if not scope or scope.get("kind") not in ("all", "wildcard"):
         return None
-    return f"{ALL_CODE}({scope.get('set', '291')})"
+    return str(scope.get("set", "291"))
+
+
+def _wildcards_typed(op: Operation) -> list[str]:
+    raw = op.payload.get("raw") if isinstance(op.payload, dict) else None
+    if not isinstance(raw, str):
+        return []
+    return [p.code for p in parse_lines(raw) if p.status == "ok" and is_wildcard(p.code)]
+
+
+def _scope_label(op: Operation) -> str | None:
+    """Names the wildcard together with the set it was frozen against.
+
+    The UI reads this to recover the original candidate set when an operation is
+    re-edited, so it must keep carrying "221"/"291" verbatim.
+    """
+    s = _scope_set(op)
+    if s is None:
+        return None
+    typed = _wildcards_typed(op)
+    return f"{typed[0] if typed else ALL_CODE}({s})"
 
 
 def _entries_of(op: Operation) -> list[OpEntry]:
@@ -55,13 +80,13 @@ def _entries_of(op: Operation) -> list[OpEntry]:
 
 def _summary(op: Operation) -> str:
     label = _LABELS.get(op.type, op.type)
-    scope = _scope_label(op)
+    scope = _scope_set(op)
     parts = []
     for e in _entries_of(op):
         sign = "+" if e.kind == "add" else "-" if e.kind == "deduct" else "="
         amount = "" if e.amount is None else e.amount
         # Show the wildcard with its scope so 221 and 291 are never confused.
-        shown = scope if (scope and e.code == ALL_CODE) else e.code
+        shown = f"{e.code}({scope})" if (scope and is_wildcard(e.code)) else e.code
         parts.append(f"{shown} {sign}{amount}")
     return f"{label} " + ", ".join(parts)
 

@@ -38,6 +38,13 @@ services:
       PINDOU_FASTGPT_TIMEOUT: ${PINDOU_FASTGPT_TIMEOUT:-1200}
       # 原图存在数据卷里，跟着 pindou-data 一起备份。
       PINDOU_UPLOAD_DIR: /data/uploads
+
+      # --- 图纸识别（VIP）---
+      # 空着也能用：那时整条 pipeline 走颜色兜底，把每个格子标红交给用户改。
+      # 这是可用的降级，不是错误配置。
+      PINDOU_MINERU_TOKEN: ${PINDOU_MINERU_TOKEN:-}
+      # 同时在跑的识别数。CV 是 CPU 密集的，NAS 上放开会拖垮 API 响应。
+      PINDOU_SHEET_CONCURRENCY: ${PINDOU_SHEET_CONCURRENCY:-2}
     volumes:
       # SQLite 在这里。备份这一个卷就等于备份全部数据。
       - pindou-data:/data

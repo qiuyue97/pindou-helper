@@ -21,7 +21,7 @@ from app.schemas import (
     StockoutOut,
 )
 from app.service import load_inventory, record, rematerialize
-from app.text_parse import ALL_CODE, expand_lines, parse_lines
+from app.text_parse import expand_lines, expand_wildcard, is_wildcard, parse_lines
 
 router = APIRouter()
 
@@ -82,11 +82,27 @@ def batch(
     session: Session = Depends(get_session),
 ) -> BatchOut:
     known = effective_codes(session, user.id)
+    parsed = parse_lines(body.text)
+
+    # The in-scope catalogue is needed to VALIDATE a wildcard (does "A*" actually
+    # cover anything here?), not just to expand it, so resolve it up front.
+    scope: list[str] = (
+        scope_codes(session, user.id, body.scope.set, body.scope.include_custom)
+        if any(p.status == "ok" and is_wildcard(p.code) for p in parsed)
+        else []
+    )
+
     results: list[BatchLineResult] = []
-    for p in parse_lines(body.text):
+    for p in parsed:
         status, message = p.status, p.message
-        if status == "ok" and p.code != ALL_CODE and p.code not in known:
-            status, message = "code_not_found", f"色号 '{p.code}' 不存在"
+        if status == "ok":
+            covered = expand_wildcard(p.code, scope) if is_wildcard(p.code) else None
+            if covered is not None:
+                # A wildcard nobody matches is a typo ("X*"), not a no-op.
+                if not covered:
+                    status, message = "code_not_found", f"{p.code} 在当前范围内没有色号"
+            elif p.code not in known:
+                status, message = "code_not_found", f"色号 '{p.code}' 不存在"
         results.append(
             BatchLineResult(line=p.line_no, code=p.code, qty=p.qty, status=status, message=message)
         )
@@ -94,21 +110,19 @@ def batch(
     if not results or any(r.status != "ok" for r in results):
         return BatchOut(ok=False, applied=False, results=results, changes=[])
 
-    # ALL is expanded and FROZEN here, so the operation's effect can never drift
-    # when the catalogue changes later. The scope is recorded alongside it purely
-    # so the history can render "ALL(221)" instead of 221 separate entries.
-    uses_all = any(r.code == ALL_CODE for r in results)
-    all_codes = (
-        scope_codes(session, user.id, body.scope.set, body.scope.include_custom)
-        if uses_all
-        else []
-    )
-    lines = expand_lines([(r.code, r.qty) for r in results], all_codes)  # type: ignore[arg-type]
+    # Wildcards are expanded and FROZEN here, so an operation's effect can never
+    # drift when the catalogue changes later. The scope is recorded alongside it
+    # purely so the history can render "ALL(221)" instead of 221 separate entries.
+    uses_wildcard = any(is_wildcard(r.code) for r in results)
+    lines = expand_lines([(r.code, r.qty) for r in results], scope)  # type: ignore[arg-type]
 
     op_type = "batch_add" if body.mode == "add" else "batch_deduct"
     payload: dict = {"raw": body.text, "lines": lines}
-    if uses_all:
+    if uses_wildcard:
         payload["scope"] = {
+            # "all" predates series wildcards but means exactly what is needed
+            # here — a candidate set was frozen — so the stored format is left
+            # alone rather than split across old and new rows.
             "kind": "all",
             "set": body.scope.set,
             "include_custom": body.scope.include_custom,
