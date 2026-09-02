@@ -111,69 +111,6 @@ def _png(im, **kw) -> bytes:
     return buf.getvalue()
 
 
-def _srgb_to_lab(rgb):
-    """sRGB (0-255) -> CIELAB, D65。与前端 color.ts、图纸切分 replica.py 同一套常数。"""
-    import numpy as np
-
-    c = np.asarray(rgb, dtype=np.float64) / 255.0
-    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
-    m = np.array([[0.4124564, 0.3575761, 0.1804375],
-                  [0.2126729, 0.7151522, 0.0721750],
-                  [0.0193339, 0.1191920, 0.9503041]])
-    xyz = lin @ m.T * 100.0
-    t = xyz / np.array([95.047, 100.0, 108.883])
-    d = 6 / 29
-    f = np.where(t > d ** 3, np.cbrt(t), t / (3 * d * d) + 4 / 29)
-    return np.stack([116 * f[..., 1] - 16,
-                     500 * (f[..., 0] - f[..., 1]),
-                     200 * (f[..., 1] - f[..., 2])], axis=-1)
-
-
-def _delta_e00(lab1, lab2):
-    """CIEDE2000。搬自 图纸切分/replica.py —— 那份对着 Sharma 的参考值自测过。"""
-    import numpy as np
-
-    L1, a1, b1 = lab1[..., 0], lab1[..., 1], lab1[..., 2]
-    L2, a2, b2 = lab2[..., 0], lab2[..., 1], lab2[..., 2]
-    C1, C2 = np.hypot(a1, b1), np.hypot(a2, b2)
-    Cbar = (C1 + C2) / 2
-    G = 0.5 * (1 - np.sqrt(Cbar ** 7 / (Cbar ** 7 + 25.0 ** 7)))
-    a1p, a2p = (1 + G) * a1, (1 + G) * a2
-    C1p, C2p = np.hypot(a1p, b1), np.hypot(a2p, b2)
-
-    def hue(b, ap):
-        h = np.degrees(np.arctan2(b, ap))
-        h = np.where(h < 0, h + 360, h)
-        return np.where((b == 0) & (ap == 0), 0.0, h)
-
-    h1p, h2p = hue(b1, a1p), hue(b2, a2p)
-    zero = (C1p * C2p) == 0
-    dh = h2p - h1p
-    dh = np.where(dh > 180, dh - 360, np.where(dh < -180, dh + 360, dh))
-    dhp = np.where(zero, 0.0, dh)
-    dLp, dCp = L2 - L1, C2p - C1p
-    dHp = 2 * np.sqrt(C1p * C2p) * np.sin(np.radians(dhp) / 2)
-
-    Lbar, Cbarp = (L1 + L2) / 2, (C1p + C2p) / 2
-    hsum, hdiff = h1p + h2p, np.abs(h1p - h2p)
-    hbar = np.where(
-        zero, hsum,
-        np.where(hdiff <= 180, hsum / 2,
-                 np.where(hsum < 360, (hsum + 360) / 2, (hsum - 360) / 2)))
-
-    T = (1 - 0.17 * np.cos(np.radians(hbar - 30))
-         + 0.24 * np.cos(np.radians(2 * hbar))
-         + 0.32 * np.cos(np.radians(3 * hbar + 6))
-         - 0.20 * np.cos(np.radians(4 * hbar - 63)))
-    SL = 1 + 0.015 * (Lbar - 50) ** 2 / np.sqrt(20 + (Lbar - 50) ** 2)
-    SC = 1 + 0.045 * Cbarp
-    SH = 1 + 0.015 * Cbarp * T
-    RT = (-2 * np.sqrt(Cbarp ** 7 / (Cbarp ** 7 + 25.0 ** 7))
-          * np.sin(np.radians(60 * np.exp(-(((hbar - 275) / 25) ** 2)))))
-    return np.sqrt((dLp / SL) ** 2 + (dCp / SC) ** 2 + (dHp / SH) ** 2
-                   + RT * (dCp / SC) * (dHp / SH))
-
-
 def _colour_shift(before, after, samples: int = 120_000) -> tuple[float, float]:
     """量化前后的 CIEDE2000 色差 (均值, p99)。
 
@@ -184,12 +121,16 @@ def _colour_shift(before, after, samples: int = 120_000) -> tuple[float, float]:
     import numpy as np
     from PIL import Image
 
+    # 和「图纸识别」共用同一套 Lab/CIEDE2000。两处各留一份副本的话，改了一处
+    # 忘了另一处，压缩报出的色差和识别用的色差就会悄悄对不上。
+    from app.colour import delta_e00, srgb_to_lab
+
     w, h = before.size
     k = max(1, int((w * h / samples) ** 0.5))
     size = (max(1, w // k), max(1, h // k))
     a = np.asarray(before.resize(size, Image.NEAREST).convert("RGB"), dtype=np.float64)
     b = np.asarray(after.resize(size, Image.NEAREST).convert("RGB"), dtype=np.float64)
-    d = _delta_e00(_srgb_to_lab(a.reshape(-1, 3)), _srgb_to_lab(b.reshape(-1, 3)))
+    d = delta_e00(srgb_to_lab(a.reshape(-1, 3)), srgb_to_lab(b.reshape(-1, 3)))
     return float(d.mean()), float(np.percentile(d, 99))
 
 

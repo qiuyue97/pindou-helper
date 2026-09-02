@@ -18,6 +18,11 @@ dependencies = [
   "pillow>=10.0",
   # 量化后的色差要按 CIEDE2000 报出来，逐像素算，纯 Python 跑不动。
   "numpy>=1.26",
+  # 图纸识别：点阵检测、逐格重采样。headless 版不拉 GUI 依赖，容器里装不上 GTK。
+  "opencv-python-headless>=4.9",
+  # 颜色聚类用 complete linkage（约束类的直径，不像 DBSCAN 会链式蔓延）。
+  # 自己写是 O(n^3) 的 Python 循环，一万格跑不完。
+  "scikit-learn>=1.4",
 ]
 
 [project.optional-dependencies]
