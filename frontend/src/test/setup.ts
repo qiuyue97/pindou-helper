@@ -63,7 +63,11 @@ export function stubCanvas2D(): Ctx2DStub {
 }
 
 // jsdom 不实现 PointerEvent。拖角全走它，没有这个 polyfill 连事件都派发不出去。
-if (typeof globalThis.PointerEvent === 'undefined') {
+//
+// 必须连 MouseEvent 一起判：scripts/** 那几个测试跑在 **node** 环境
+// （vitest.config.ts 的 environmentMatchGlobs），那里连 MouseEvent 都没有，
+// `class ... extends MouseEvent` 在**导入 setup 时**就会抛，整个文件收集失败。
+if (typeof MouseEvent !== 'undefined' && typeof globalThis.PointerEvent === 'undefined') {
   class PointerEventPolyfill extends MouseEvent {
     pointerId: number;
     pointerType: string;
