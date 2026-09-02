@@ -13,15 +13,18 @@ data URL 会被拒为 "Invalid workflow plugin file"。
 
 from __future__ import annotations
 
+import concurrent.futures as cf
 import logging
-import mimetypes
 import os
 import uuid
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 
 import httpx
 
 from app.config import Settings
+from app.imaging import INLINE_LIMIT, fit_inline, normalise_name, sniff_image
+from app.text_parse import parse_lines
 
 log = logging.getLogger("pindou.fastgpt")
 
@@ -45,46 +48,6 @@ class PatternResult:
 
 def _headers(settings: Settings) -> dict[str, str]:
     return {"Authorization": f"Bearer {settings.fastgpt_api_key}"}
-
-
-# 文件头 -> (后缀, MIME)，先匹配到的算数。
-#
-# 为什么不能信文件名：FastGPT 上传时会嗅探内容，一旦后缀和真实类型对不上就直接
-# 拒掉（UploadFileTypeMismatch，返回 500），而且它注释里写明了故意不帮忙改名。
-# 而用户手上的图纸大量来自微信/QQ 转存，JPEG 被存成 .png 是常态不是特例——手上
-# 6 张样例里就有 2 张是这样。
-_MAGIC: tuple[tuple[bytes, str, str], ...] = (
-    (b"\x89PNG\r\n\x1a\n", ".png", "image/png"),
-    (b"\xff\xd8\xff", ".jpg", "image/jpeg"),
-    (b"GIF87a", ".gif", "image/gif"),
-    (b"GIF89a", ".gif", "image/gif"),
-    (b"BM", ".bmp", "image/bmp"),
-)
-
-
-def sniff_image(data: bytes) -> tuple[str, str] | None:
-    """从字节本身判断图片类型，返回 (后缀, MIME)；不认识就返回 None。"""
-    for magic, ext, mime in _MAGIC:
-        if data.startswith(magic):
-            return ext, mime
-    # WebP 是 RIFF 容器，类型标在第 8-12 字节
-    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return ".webp", "image/webp"
-    return None
-
-
-def normalise_name(filename: str, data: bytes) -> tuple[str, str]:
-    """把文件名的后缀改成和内容一致，返回 (文件名, MIME)。
-
-    认不出类型时保持原样，把判断交给服务端——这里的职责是消除"后缀在说谎"这一种
-    情况，不是替服务端做格式白名单。
-    """
-    sniffed = sniff_image(data)
-    if sniffed is None:
-        return filename, mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    ext, mime = sniffed
-    stem = os.path.splitext(filename or "")[0] or "image"
-    return stem + ext, mime
 
 
 def upload_image(
@@ -162,12 +125,78 @@ def _invoke(
     )
 
 
+@dataclass
+class ImageOutcome:
+    """一张图最后怎么样了。每张都有一条，成功失败都记。"""
+
+    index: int
+    filename: str
+    #: ok | failed
+    status: str
+    error: str = ""
+    #: 压缩做了什么、色差多少之类，给用户看的提醒
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BatchResult:
+    """整批的合并结果，外加每张图的下场。"""
+
+    is_extraction: bool
+    bead_list: str
+    md_table: str
+    nl_response: str
+    model: str
+    outcomes: list[ImageOutcome] = field(default_factory=list)
+
+    @property
+    def ok_count(self) -> int:
+        return sum(1 for o in self.outcomes if o.status == "ok")
+
+
+def _merge(results: list[tuple[list[int], PatternResult]]) -> tuple[bool, str, str, str]:
+    """把各批的 bead_list 按色号求和。
+
+    md_table 得自己重建，不能把各批的表拼起来：那些表是"行是色号、列是图片"，
+    并行跑出来的几张表列不对齐，拼在一起是错的。这里按合并后的总数重新生成一张
+    「色号 | 数量」的表，宁可信息少一点也不能是错的。
+    """
+    total: Counter[str] = Counter()
+    notes: list[str] = []
+    any_extraction = False
+    for _, r in results:
+        if r.is_extraction:
+            any_extraction = True
+        for line in parse_lines(r.bead_list):
+            if line.status == "ok" and line.code and line.qty:
+                total[line.code] += line.qty
+        if r.nl_response and r.nl_response not in notes:
+            notes.append(r.nl_response)
+
+    ordered = sorted(total.items(), key=lambda kv: (-kv[1], kv[0]))
+    bead_list = "\n".join(f"{code}, {qty}" for code, qty in ordered)
+    md_table = "\n".join(
+        ["| 色号 | 数量 |", "| --- | --- |", *(f"| {c} | {q} |" for c, q in ordered)]
+    ) if ordered else ""
+    return any_extraction, bead_list, md_table, "\n".join(notes)
+
+
 def recognise(
     images: list[tuple[str, bytes]], settings: Settings
-) -> PatternResult:
-    """上传图片并识别。按配置的模型顺序降级。
+) -> BatchResult:
+    """上传图片并识别，分小批并行，逐图记录成败。
 
-    `images` 是 (文件名, 字节) 的列表。
+    为什么要分批：一次喂给模型的图越多，幻觉越严重——它会把不同图纸的色号串在
+    一起。每批只放两张，是在"请求数"和"可靠性"之间取的位置，批大小可配。
+
+    为什么要并行：批多了串行就是几十分钟。批与批之间没有依赖，直接并发。
+
+    为什么一批失败要拆开重试：一批两张，其中一张有问题就会把另一张一起拖垮。
+    拆成单张重跑一次，就能把责任落到具体哪张图上——用户要的是"第 3 张不行"，
+    不是"这次不行"。
+
+    模型选择：压不进内联预算的图不能走 Kimi（上游对内联媒体卡 2 MiB），这类批次
+    直接从吃 URL 的模型开始试。
     """
     if not settings.fastgpt_configured:
         raise FastGPTError("未配置 FastGPT（PINDOU_FASTGPT_BASE_URL / _API_KEY / _APP_ID）")
@@ -176,22 +205,96 @@ def recognise(
 
     chat_id = str(uuid.uuid4())
     models = settings.fastgpt_model_list or ["kimi-k3"]
+    big_models = [m for m in models if not _is_inline_limited(m, settings)] or models[-1:]
+    per_batch = max(1, settings.fastgpt_images_per_request)
+
+    outcomes = [ImageOutcome(i, name, "failed", "未处理") for i, (name, _) in enumerate(images)]
 
     with httpx.Client(timeout=settings.fastgpt_timeout, follow_redirects=True) as client:
-        urls = [
-            upload_image(client, settings, data, name, chat_id) for name, data in images
-        ]
-        log.info("已上传 %d 张图到 FastGPT", len(urls))
-
-        failures: list[str] = []
-        for model in models:
+        # 上传阶段就逐图隔离：一张传不上去，其余照常。
+        uploaded: list[tuple[int, str, bool, int]] = []  # (下标, url, 压进预算了吗, 字节数)
+        for i, (name, data) in enumerate(images):
             try:
-                return _invoke(client, settings, urls, model)
-            except Exception as exc:  # noqa: BLE001 - 任何失败都只是"换下一个"
-                log.warning("FastGPT 用 %s 失败：%s", model, exc.__class__.__name__)
-                failures.append(f"{model}: {type(exc).__name__}")
+                fitted = fit_inline(data, settings.inline_budget)
+                url = upload_image(client, settings, fitted.data, name, chat_id)
+            except Exception as exc:  # noqa: BLE001 - 单张失败不影响别人
+                log.warning("第 %d 张上传失败：%s", i + 1, exc)
+                outcomes[i] = ImageOutcome(i, name, "failed", _brief(exc))
+                continue
+            outcomes[i] = ImageOutcome(i, name, "ok", notes=list(fitted.notes))
+            uploaded.append((i, url, fitted.within_budget, fitted.size))
 
-    raise FastGPTError("所有模型都失败了：" + "；".join(failures))
+        if not uploaded:
+            raise FastGPTError("所有图片都上传失败了")
+        log.info("已上传 %d/%d 张图到 FastGPT", len(uploaded), len(images))
+
+        batches = [uploaded[i : i + per_batch] for i in range(0, len(uploaded), per_batch)]
+        results: list[tuple[list[int], PatternResult]] = []
+
+        def run(batch):
+            idx = [i for i, _, _, _ in batch]
+            urls = [u for _, u, _, _ in batch]
+            # 上限卡的是**一次请求内所有内联图片之和**，不是单张——这是从线上日志
+            # 对出来的：一次 3 张的请求报 2,244,894，正好等于其中两张之和；一次
+            # 6 张的报 3,609,950，正好等于前五张之和。所以除了"每张有没有压进
+            # 各自那份预算"，整批的实际总和也得看。
+            total = sum(n for _, _, _, n in batch)
+            fits = all(ok for _, _, ok, _ in batch) and total <= INLINE_LIMIT
+            return idx, urls, _try_models(client, settings, urls,
+                                          models if fits else big_models)
+
+        with cf.ThreadPoolExecutor(max_workers=settings.fastgpt_concurrency) as pool:
+            for idx, urls, (res, err) in pool.map(run, batches):
+                if res is not None:
+                    results.append((idx, res))
+                    continue
+                # 整批失败：拆开单张重试，把责任落到具体的图上
+                log.info("一批 %d 张失败（%s），拆开重试", len(idx), err)
+                for i, url in zip(idx, urls):
+                    single, serr = _try_models(client, settings, [url], models)
+                    if single is not None:
+                        results.append(([i], single))
+                    else:
+                        outcomes[i] = ImageOutcome(
+                            i, images[i][0], "failed", serr or "识别失败",
+                            notes=outcomes[i].notes,
+                        )
+
+    if not results:
+        raise FastGPTError("所有图片都识别失败了")
+
+    extracted, bead_list, md_table, note = _merge(results)
+    model = next((r.model for _, r in results if r.model), models[0])
+    return BatchResult(extracted, bead_list, md_table, note, model, outcomes)
+
+
+def _brief(exc: Exception) -> str:
+    """给用户看的一句话，不带网关原文里可能夹带的凭据。"""
+    if isinstance(exc, (FastGPTError, ValueError)):
+        return str(exc)[:200]
+    return f"{type(exc).__name__}"
+
+
+def _is_inline_limited(model: str, settings: Settings) -> bool:
+    """这个模型是不是走"把图转成 base64 内联"的那条链路。
+
+    判断放在配置里而不是写死模型名：换网关、换模型都不该来改代码。
+    """
+    return any(k and k in model for k in settings.inline_limited_list)
+
+
+def _try_models(
+    client: httpx.Client, settings: Settings, urls: list[str], models: list[str]
+) -> tuple[PatternResult | None, str]:
+    """按顺序试模型，返回 (结果, 失败说明)。全失败就是 (None, 说明)。"""
+    failures: list[str] = []
+    for model in models:
+        try:
+            return _invoke(client, settings, urls, model), ""
+        except Exception as exc:  # noqa: BLE001 - 任何失败都只是"换下一个"
+            log.warning("FastGPT 用 %s 失败：%s", model, exc.__class__.__name__)
+            failures.append(f"{model}: {_brief(exc)}")
+    return None, "；".join(failures)
 
 
 # --- 本地图片留存 ---------------------------------------------------------

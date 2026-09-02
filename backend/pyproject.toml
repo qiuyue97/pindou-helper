@@ -14,6 +14,10 @@ dependencies = [
   "httpx>=0.27",
   # 图纸识别接口收 multipart 上传；FastAPI 不自带这个解析器。
   "python-multipart>=0.0.9",
+  # 图片要压进上游的内联媒体上限（2 MiB/请求），靠它重编码和量化调色板。
+  "pillow>=10.0",
+  # 量化后的色差要按 CIEDE2000 报出来，逐像素算，纯 Python 跑不动。
+  "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

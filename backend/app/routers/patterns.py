@@ -18,9 +18,10 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db import get_session, get_sessionmaker
 from app.deps import require_vip
-from app.fastgpt import FastGPTError, read_upload, recognise, save_upload, sniff_image
+from app.fastgpt import FastGPTError, read_upload, recognise, save_upload
+from app.imaging import sniff_image
 from app.models import PatternJob, User
-from app.schemas import PatternJobOut, PatternJobSummary
+from app.schemas import PatternImageOut, PatternJobOut, PatternJobSummary
 
 log = logging.getLogger("pindou.patterns")
 
@@ -41,6 +42,7 @@ def _row(job: PatternJob) -> PatternJobOut:
         extracted=job.extracted,
         seen=job.seen,
         image_count=len(job.images or []),
+        items=[PatternImageOut(**it) for it in (job.items or [])],
         created_at=job.created_at,
         finished_at=job.finished_at,
     )
@@ -59,6 +61,25 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
                 setattr(job, k, v)
             session.commit()
 
+    # 建任务时就记下了被门口挡掉的那几张（格式不对、太大），识别结果要并进来，
+    # 而不是覆盖掉——用户得看到完整的一份"每张图怎么样了"。
+    with maker() as session:
+        job = session.get(PatternJob, job_id)
+        rejected = list(job.items or []) if job else []
+
+    def merged(outcomes) -> list[dict]:
+        # recognise 的下标是"送进去识别的那批"里的序号，要还原成用户上传时的序号
+        free = [i for i in range(len(rejected) + len(images))
+                if i not in {r["index"] for r in rejected}]
+        out = list(rejected)
+        for o in outcomes:
+            out.append({
+                "index": free[o.index] if o.index < len(free) else o.index,
+                "filename": o.filename, "status": o.status,
+                "error": o.error, "notes": o.notes,
+            })
+        return sorted(out, key=lambda r: r["index"])
+
     update(status="running")
     try:
         result = recognise(images, settings)
@@ -76,6 +97,8 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
         # 图里没有色号统计区域。这不是失败——模型在 nl_response 里说明了原因——
         # 但也没有任何可扣减的东西，所以要跟正常结果区分开。
         log.info("图纸识别无可提取内容 job=%s", job_id)
+    items = merged(result.outcomes)
+    failed = [it for it in items if it["status"] != "ok"]
     update(
         status="done",
         extracted=result.is_extraction,
@@ -83,9 +106,15 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
         md_table=result.md_table,
         note=result.nl_response,
         model=result.model,
+        items=items,
+        # 部分失败不是整体失败：能认的都认了，把认不了的那几张说清楚。
+        error=(f"{len(failed)}/{len(items)} 张未能识别" if failed else ""),
         finished_at=datetime.now(UTC),
     )
-    log.info("图纸识别完成 job=%s model=%s", job_id, result.model)
+    log.info(
+        "图纸识别完成 job=%s model=%s ok=%d/%d",
+        job_id, result.model, len(items) - len(failed), len(items),
+    )
 
 
 @router.post("/patterns", response_model=PatternJobOut, status_code=202)
@@ -104,21 +133,34 @@ async def create_pattern_job(
             status_code=422, detail=f"最多上传 {settings.upload_max_files} 张"
         )
 
+    # 逐图校验。一张不合格就把整批打回，等于让用户为一张废图重传另外十九张；
+    # 不合格的单独记下来，能用的照常识别。
     payloads: list[tuple[str, bytes]] = []
-    for f in files:
+    rejected: list[PatternImageOut] = []
+    for i, f in enumerate(files):
+        name = f.filename or "image.png"
         data = await f.read()
         if len(data) > settings.upload_max_bytes:
-            raise HTTPException(
-                status_code=422,
-                detail=f"单张图片不能超过 {settings.upload_max_bytes // 1024 // 1024} MB",
-            )
+            rejected.append(PatternImageOut(
+                index=i, filename=name, status="failed",
+                error=f"不能超过 {settings.upload_max_bytes // 1024 // 1024} MB",
+            ))
+            continue
         # 浏览器报的 content_type 是从后缀推出来的，后缀错它就跟着错，所以格式
         # 校验以内容为准；后面的上传和落盘也都按嗅探结果走，不再看文件名。
         sniffed = sniff_image(data)
         if sniffed is None or sniffed[1] not in _IMAGE_TYPES:
             got = sniffed[1] if sniffed else (f.content_type or "未知")
-            raise HTTPException(status_code=422, detail=f"不支持的图片格式: {got}")
-        payloads.append((f.filename or "image.png", data))
+            rejected.append(PatternImageOut(
+                index=i, filename=name, status="failed",
+                error=f"不支持的图片格式: {got}",
+            ))
+            continue
+        payloads.append((name, data))
+
+    if not payloads:
+        detail = rejected[0].error if len(rejected) == 1 else "没有一张图片可以识别"
+        raise HTTPException(status_code=422, detail=detail)
 
     # 原图先落到本地卷：FastGPT 的 previewUrl 不受我们控制，也不保证留多久，
     # 用户之后回看这次识别用的是哪几张图，靠的是这份副本。
@@ -126,7 +168,13 @@ async def create_pattern_job(
         save_upload(settings.upload_dir, user.id, name, data) for name, data in payloads
     ]
 
-    job = PatternJob(user_id=user.id, status="pending", images=stored)
+    job = PatternJob(
+        user_id=user.id,
+        status="pending",
+        images=stored,
+        # 被挡在门外的那几张先记上，识别完了再和后面的结果合并
+        items=[r.model_dump() for r in rejected],
+    )
     session.add(job)
     session.commit()
 

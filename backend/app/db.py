@@ -35,7 +35,10 @@ def get_session() -> Iterator[Session]:
 # user's inventory. Additive only: never drops or rewrites anything.
 _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "users": {"is_vip": "BOOLEAN NOT NULL DEFAULT 0"},
-    "pattern_jobs": {"extracted": "BOOLEAN NOT NULL DEFAULT 1"},
+    "pattern_jobs": {
+        "extracted": "BOOLEAN NOT NULL DEFAULT 1",
+        "items": "JSON",
+    },
 }
 
 

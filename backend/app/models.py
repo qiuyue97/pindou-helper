@@ -87,6 +87,9 @@ class PatternJob(Base):
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
     #: 本地留存的原图相对路径，供用户回看
     images: Mapped[list] = mapped_column(JSON, default=list)
+    #: 每张图的下场：[{index, filename, status, error, notes}]。识别是分批并行跑的，
+    #: 一张图出问题不该拖垮整批，所以成败要落到具体哪张图上。
+    items: Mapped[list] = mapped_column(JSON, default=list)
     #: 识别出的 "色号, 数量" 清单，可直接粘进按图扣减
     bead_list: Mapped[str] = mapped_column(Text, default="")
     md_table: Mapped[str] = mapped_column(Text, default="")

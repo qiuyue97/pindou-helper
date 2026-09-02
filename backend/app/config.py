@@ -39,11 +39,26 @@ class Settings(BaseSettings):
     upload_dir: str = "/data/uploads"
     #: 单张图上限，同时也是 FastGPT 那边能接受的量级。
     upload_max_bytes: int = 12 * 1024 * 1024
-    upload_max_files: int = 10
+    #: 一次能传多少张。分批送模型之后单批规模不再随上传量增长，所以可以放宽。
+    upload_max_files: int = 20
+    #: 每次请求塞几张图。喂多了模型会把不同图纸的色号串在一起，两张是实测的位置。
+    fastgpt_images_per_request: int = 2
+    #: 同时在跑的批数
+    fastgpt_concurrency: int = 4
+    #: 单张压缩的目标：上游卡的是一次请求内**所有**内联图片之和（2 MiB），所以
+    #: 这里是 2 MiB 除以每批张数，再留一点余量。批的实际总和另有一道检查。
+    inline_budget: int = 1024 * 1024
+    #: 名字里带这些片段的模型走"图片转 base64 内联"那条链路，受 inline_budget 约束。
+    #: 压不进预算的图会跳过它们，直接找吃 URL 的模型。
+    inline_limited: str = "kimi"
 
     @property
     def fastgpt_model_list(self) -> list[str]:
         return [m.strip() for m in self.fastgpt_models.split(",") if m.strip()]
+
+    @property
+    def inline_limited_list(self) -> list[str]:
+        return [m.strip().lower() for m in self.inline_limited.split(",") if m.strip()]
 
     @property
     def fastgpt_configured(self) -> bool:

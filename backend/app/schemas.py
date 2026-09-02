@@ -231,6 +231,17 @@ class SmartExtractOut(BaseModel):
     model: str = ""
 
 
+class PatternImageOut(BaseModel):
+    """一张图的下场。前台用它把失败的那几张单独标出来。"""
+
+    index: int
+    filename: str = ""
+    #: ok | failed
+    status: str = "ok"
+    error: str = ""
+    notes: list[str] = []
+
+
 class PatternJobOut(BaseModel):
     id: int
     status: str
@@ -243,6 +254,8 @@ class PatternJobOut(BaseModel):
     extracted: bool = True
     seen: bool = False
     image_count: int = 0
+    #: 逐图结果；整批成功时也在，方便前台显示"这张压缩过"之类的提醒
+    items: list[PatternImageOut] = []
     created_at: datetime
     finished_at: datetime | None = None
 

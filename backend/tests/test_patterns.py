@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db import get_sessionmaker
-from app.fastgpt import PatternResult, read_upload, save_upload
+from app.fastgpt import BatchResult, ImageOutcome, read_upload, save_upload
 from app.models import PatternJob, User
 from tests.conftest import XRW
 
@@ -56,14 +56,23 @@ def vip_client(auth_client, monkeypatch, tmp_path):
     get_settings.cache_clear()
 
 
-def _stub_ok(monkeypatch, bead_list="A1, 10\nB2, 5", model="kimi-k3", is_extraction=True):
+def _stub_ok(monkeypatch, bead_list="A1, 10\nB2, 5", model="kimi-k3", is_extraction=True,
+             fail: set[int] | None = None):
+    """把 recognise 打桩。`fail` 里的下标当作那几张图没认出来。"""
+    failed = fail or set()
+
     def fake(images, settings):
-        return PatternResult(
+        return BatchResult(
             is_extraction=is_extraction,
             bead_list=bead_list,
-            md_table="| 色号 | 图片1 |\n| --- | --- |\n| A1 | 10 |",
+            md_table="| 色号 | 数量 |\n| --- | --- |\n| A1 | 10 |",
             nl_response=f"已从 {len(images)} 张图片中提取",
             model=model,
+            outcomes=[
+                ImageOutcome(i, name, "failed" if i in failed else "ok",
+                             "识别失败" if i in failed else "")
+                for i, (name, _) in enumerate(images)
+            ],
         )
 
     monkeypatch.setattr("app.routers.patterns.recognise", fake)
@@ -170,7 +179,8 @@ def test_the_request_returns_immediately_and_the_work_happens_after(vip_client, 
     def slow(images, settings):
         time.sleep(0.15)
         released.append(True)
-        return PatternResult(True, "A1, 1", "", "ok", "kimi-k3")
+        return BatchResult(True, "A1, 1", "", "ok", "kimi-k3",
+                           [ImageOutcome(i, n, "ok") for i, (n, _) in enumerate(images)])
 
     monkeypatch.setattr("app.routers.patterns.recognise", slow)
 
@@ -447,3 +457,70 @@ def test_the_extracted_column_is_added_to_a_database_that_predates_it(vip_client
         # 老记录默认算"抽到了"——它们本来就是正常结果
         assert conn.exec_driver_sql("SELECT extracted FROM pattern_jobs").scalar() == 1
     assert vip_client.get(f"/api/patterns/{job_id}").json()["extracted"] is True
+
+
+# ---------- 逐图隔离与分批 ----------
+
+
+def test_a_bad_image_does_not_take_the_good_ones_down(vip_client, monkeypatch):
+    """一张格式不对，其余照常识别。
+
+    以前是整批 422：用户为一张废图重传另外十九张。现在废的那张单独记下来，
+    能认的都认了。
+    """
+    _stub_ok(monkeypatch, bead_list="A1, 7")
+    res = vip_client.post(
+        "/api/patterns",
+        files=[
+            ("files", ("good0.png", io.BytesIO(PNG), "image/png")),
+            ("files", ("junk.png", io.BytesIO(b"definitely not an image"), "image/png")),
+            ("files", ("good1.png", io.BytesIO(PNG), "image/png")),
+        ],
+        headers=XRW,
+    )
+    assert res.status_code == 202
+    job = _wait_for(vip_client, res.json()["id"], "done")
+
+    assert job["bead_list"] == "A1, 7"          # 好的两张照常出结果
+    items = {it["index"]: it for it in job["items"]}
+    assert len(items) == 3
+    assert items[1]["status"] == "failed"
+    assert "不支持的图片格式" in items[1]["error"]
+    assert items[0]["status"] == "ok" and items[2]["status"] == "ok"
+    # 部分失败要说清楚，但不能把整个任务标成 failed
+    assert job["status"] == "done"
+    assert "1/3" in job["error"]
+
+
+def test_an_image_the_model_cannot_read_is_named(vip_client, monkeypatch):
+    """识别不出的那张要指名道姓，而不是"这次不行"。"""
+    _stub_ok(monkeypatch, fail={1})
+    job_id = vip_client.post("/api/patterns", files=_files(3), headers=XRW).json()["id"]
+    job = _wait_for(vip_client, job_id, "done")
+
+    items = {it["index"]: it for it in job["items"]}
+    assert items[1]["status"] == "failed"
+    assert items[1]["filename"] == "p1.png"
+    assert items[0]["status"] == "ok" and items[2]["status"] == "ok"
+
+
+def test_twenty_images_are_allowed(vip_client, monkeypatch):
+    """分批送模型之后，单批规模不随上传量增长，所以上限可以放宽到 20。"""
+    _stub_ok(monkeypatch)
+    res = vip_client.post("/api/patterns", files=_files(20), headers=XRW)
+    assert res.status_code == 202
+    assert _wait_for(vip_client, res.json()["id"], "done")["image_count"] == 20
+
+
+def test_every_image_rejected_is_still_an_error(vip_client):
+    """一张能用的都没有，那就是彻底失败，别建个空任务糊弄用户。"""
+    res = vip_client.post(
+        "/api/patterns",
+        files=[
+            ("files", ("a.png", io.BytesIO(b"junk"), "image/png")),
+            ("files", ("b.png", io.BytesIO(b"junk"), "image/png")),
+        ],
+        headers=XRW,
+    )
+    assert res.status_code == 422
+    assert "没有一张" in res.json()["detail"]
