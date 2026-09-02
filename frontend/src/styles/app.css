@@ -239,6 +239,13 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .table-scroll { overflow-x: auto; }
 .pattern-table th button.linklike { padding: 0; text-decoration: underline; }
 .pattern-table .summary-row td { font-weight: 600; background: var(--bg); }
+/* 认不出来的那张图整列标红，但列还在、表头照样能点开原图：把它藏起来会让
+   后面每一列的"图片N"悄悄错位，N 就不再是用户上传时的第 N 张了。 */
+.pattern-table th.failed-col,
+.pattern-table td.failed-col { color: var(--danger); background: rgba(192, 57, 43, 0.06); }
+.pattern-table th.failed-col button.linklike { color: var(--danger); }
+.pattern-problems { margin: 0.6rem 0 0; padding-left: 1.1rem; font-size: 0.9em; }
+.pattern-problems li { margin: 0.2rem 0; }
 /* 可缩放的图片查看器。overflow:hidden 让放大的部分被裁在框里，而不是把弹窗撑大。 */
 .viewer { display: grid; gap: 0.4rem; }
 .viewer-controls { display: flex; align-items: center; gap: 0.3rem; }

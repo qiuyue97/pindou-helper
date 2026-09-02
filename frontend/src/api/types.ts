@@ -126,6 +126,23 @@ export interface SinglePayload {
   qty?: number;
 }
 
+/** How one uploaded file fared. Present for every file, good or bad. */
+export interface PatternImage {
+  /** The order the user uploaded it in — display order, nothing else. */
+  index: number;
+  /**
+   * Where the original lives: `/api/patterns/{job}/images/{image_index}`.
+   * Null when the file never got stored (wrong type, too big), so there is
+   * nothing to open.
+   */
+  image_index: number | null;
+  filename: string;
+  status: 'ok' | 'failed';
+  error: string;
+  /** Warnings worth showing, e.g. that the image had to be quantised. */
+  notes: string[];
+}
+
 export interface PatternJob {
   id: number;
   status: 'pending' | 'running' | 'done' | 'failed';
@@ -138,6 +155,8 @@ export interface PatternJob {
   extracted: boolean;
   seen: boolean;
   image_count: number;
+  /** Per-image outcome; one entry per uploaded file. */
+  items: PatternImage[];
   created_at: string;
   finished_at: string | null;
 }

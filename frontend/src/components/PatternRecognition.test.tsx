@@ -28,6 +28,10 @@ const job = (over: Record<string, unknown> = {}) => ({
   extracted: true,
   seen: false,
   image_count: 2,
+  items: [
+    { index: 0, image_index: 0, filename: 'a.png', status: 'ok', error: '', notes: [] },
+    { index: 1, image_index: 1, filename: 'b.png', status: 'ok', error: '', notes: [] },
+  ],
   created_at: '2026-09-01T00:00:00Z',
   finished_at: '2026-09-01T00:01:00Z',
   ...over,
@@ -322,3 +326,60 @@ describe('图里没有色号统计区域', () => {
 });
 
 
+
+describe('认不出来的那张图', () => {
+  const withFailure = {
+    ...base,
+    'GET /api/auth/me': vipMe,
+    'GET /api/patterns': {
+      body: {
+        jobs: [
+          job({
+            error: '1/2 张未能识别',
+            md_table:
+              '| 色号 | 图片1 | 图片2 | 合计 |\n| --- | --- | --- | --- |\n' +
+              '| A3 | 105 |  | 105 |\n| 色号数量 | 1 | 0 | 1 |\n| 总豆数 | 105 | 0 | 105 |',
+            items: [
+              { index: 0, image_index: 0, filename: 'ok.png', status: 'ok', error: '', notes: [] },
+              {
+                index: 1,
+                image_index: 1,
+                filename: 'bad.png',
+                status: 'failed',
+                error: '识别失败',
+                notes: [],
+              },
+            ],
+          }),
+        ],
+        unseen: 1,
+        running: 0,
+      },
+    },
+  };
+
+  test('它的列还在，还能点开原图，只是整列标红', async () => {
+    mockFetch(withFailure);
+    renderDialog();
+    await userEvent.click(await screen.findByRole('button', { name: '查看各图明细' }));
+
+    // 列没有被藏掉：藏了的话后面每一列的"图片N"都会悄悄错位
+    const bad = await screen.findByRole('button', { name: /图片2/ });
+    expect(bad.closest('th')).toHaveClass('failed-col');
+    // 整列——表头和每一个单元格
+    const table = screen.getByRole('table', { name: '各图色号明细' });
+    const marked = table.querySelectorAll('td.failed-col');
+    expect(marked.length).toBeGreaterThan(0);
+
+    // 照样点得开：用户第一件想做的事就是亲眼看看它怎么了
+    await userEvent.click(bad);
+    expect(await screen.findByAltText('识别用的第 2 张图')).toBeInTheDocument();
+  });
+
+  test('失败原因单独列出来，而不是只有一句 N/M', async () => {
+    mockFetch(withFailure);
+    renderDialog();
+    await userEvent.click(await screen.findByRole('button', { name: '查看各图明细' }));
+    expect(await screen.findByText(/bad\.png/)).toBeInTheDocument();
+  });
+});

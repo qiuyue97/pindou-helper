@@ -68,13 +68,19 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
         rejected = list(job.items or []) if job else []
 
     def merged(outcomes) -> list[dict]:
-        # recognise 的下标是"送进去识别的那批"里的序号，要还原成用户上传时的序号
-        free = [i for i in range(len(rejected) + len(images))
-                if i not in {r["index"] for r in rejected}]
-        out = list(rejected)
+        """把"门口挡掉的"和"识别过的"合成一份完整名单。
+
+        两套下标必须分清：`index` 是用户上传时的顺序，只用来排序显示；
+        `image_index` 是这张图在 job.images 里的位置，也就是取原图那个接口的参数。
+        被挡掉的图没有存原图，所以它的 image_index 是 None，前端据此不给点。
+        """
+        taken = {r["index"] for r in rejected}
+        upload_pos = [i for i in range(len(rejected) + len(images)) if i not in taken]
+        out = [{**r, "image_index": None} for r in rejected]
         for o in outcomes:
             out.append({
-                "index": free[o.index] if o.index < len(free) else o.index,
+                "index": upload_pos[o.index] if o.index < len(upload_pos) else o.index,
+                "image_index": o.index,
                 "filename": o.filename, "status": o.status,
                 "error": o.error, "notes": o.notes,
             })

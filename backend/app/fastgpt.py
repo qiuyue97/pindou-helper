@@ -129,6 +129,8 @@ def _invoke(
 class ImageOutcome:
     """一张图最后怎么样了。每张都有一条，成功失败都记。"""
 
+    #: 在送进来的这批图里的序号，也就是这张图在 job.images 里的位置——前端拿它
+    #: 去 /api/patterns/{id}/images/{index} 取原图
     index: int
     filename: str
     #: ok | failed
@@ -154,31 +156,95 @@ class BatchResult:
         return sum(1 for o in self.outcomes if o.status == "ok")
 
 
-def _merge(results: list[tuple[list[int], PatternResult]]) -> tuple[bool, str, str, str]:
-    """把各批的 bead_list 按色号求和。
+def _counts(text: str) -> Counter[str]:
+    out: Counter[str] = Counter()
+    for line in parse_lines(text):
+        if line.status == "ok" and line.code and line.qty:
+            out[line.code] += line.qty
+    return out
 
-    md_table 得自己重建，不能把各批的表拼起来：那些表是"行是色号、列是图片"，
-    并行跑出来的几张表列不对齐，拼在一起是错的。这里按合并后的总数重新生成一张
-    「色号 | 数量」的表，宁可信息少一点也不能是错的。
+
+def _table(per_image: list[Counter[str]]) -> str:
+    """「色号 × 图片N」的明细表，末尾带合计列和两行统计。
+
+    列头必须写成"图片N"：前端拿它反查 /api/patterns/{id}/images/{N-1}，让用户
+    点一下就能对着原图核一个可疑的数字。N 是这张图在 job.images 里的位置，也就
+    是通过了校验、真的存下来的那些图的序号——被挡在门外的那几张没有原图可看，
+    自然也不占列。
+
+    各批的表不能直接拼：模型返回的表列是它自己编的，并行跑出来的几张对不齐。
+    现在一张一个请求，每一列的归属是确定的，重建反而比拼接更准。
+    """
+    codes = sorted(
+        {c for col in per_image for c in col},
+        key=lambda c: (-sum(col.get(c, 0) for col in per_image), c),
+    )
+    if not codes:
+        return ""
+    n = len(per_image)
+    head = ["色号", *(f"图片{i + 1}" for i in range(n))] + (["合计"] if n > 1 else [])
+    lines = [
+        "| " + " | ".join(head) + " |",
+        "| " + " | ".join(["---"] * len(head)) + " |",
+    ]
+    for c in codes:
+        cells = [str(col[c]) if col.get(c) else "" for col in per_image]
+        total = sum(col.get(c, 0) for col in per_image)
+        lines.append("| " + " | ".join([c, *cells] + ([str(total)] if n > 1 else [])) + " |")
+    kinds = [str(len(col)) for col in per_image]
+    beads = [str(sum(col.values())) for col in per_image]
+    lines.append("| " + " | ".join(
+        ["色号数量", *kinds] + ([str(len(codes))] if n > 1 else [])) + " |")
+    lines.append("| " + " | ".join(
+        ["总豆数", *beads]
+        + ([str(sum(sum(col.values()) for col in per_image))] if n > 1 else [])) + " |")
+    return "\n".join(lines)
+
+
+def _merge(
+    results: list[tuple[list[int], PatternResult]], n_images: int
+) -> tuple[bool, str, str, str]:
+    """合并各次请求的结果。
+
+    每次请求只送一张图（见 recognise），所以每份结果都能落到确定的一列上，
+    明细表按图片重建。批大小若被调大到一次多张，那批的结果无法拆到具体某张，
+    这时退回不带列的汇总表——宁可信息少，也不能编一个看着像真的归属。
     """
     total: Counter[str] = Counter()
-    notes: list[str] = []
+    per_image: list[Counter[str]] = [Counter() for _ in range(n_images)]
+    attributable = True
     any_extraction = False
-    for _, r in results:
+    for idx, r in results:
         if r.is_extraction:
             any_extraction = True
-        for line in parse_lines(r.bead_list):
-            if line.status == "ok" and line.code and line.qty:
-                total[line.code] += line.qty
-        if r.nl_response and r.nl_response not in notes:
-            notes.append(r.nl_response)
+        c = _counts(r.bead_list)
+        total += c
+        if len(idx) == 1 and 0 <= idx[0] < n_images:
+            per_image[idx[0]] += c
+        else:
+            attributable = False
 
     ordered = sorted(total.items(), key=lambda kv: (-kv[1], kv[0]))
     bead_list = "\n".join(f"{code}, {qty}" for code, qty in ordered)
-    md_table = "\n".join(
-        ["| 色号 | 数量 |", "| --- | --- |", *(f"| {c} | {q} |" for c, q in ordered)]
-    ) if ordered else ""
-    return any_extraction, bead_list, md_table, "\n".join(notes)
+    if attributable:
+        md_table = _table(per_image)
+    elif ordered:
+        md_table = "\n".join(
+            ["| 色号 | 数量 |", "| --- | --- |", *(f"| {c} | {q} |" for c, q in ordered)]
+        )
+    else:
+        md_table = ""
+
+    # 自己写这句话，而不是把每次请求的原话拼起来：一张一个请求之后，模型每次都说
+    # "已从 1 张图片中…"，六张图就是六句一模一样的废话。
+    done = sum(1 for col in per_image if col) if attributable else len(results)
+    note = (
+        f"已从 {done} 张图片中共提取到 {len(ordered)} 种色号，"
+        f"合计 {sum(total.values())} 颗拼豆。"
+        if ordered
+        else "\n".join(dict.fromkeys(r.nl_response for _, r in results if r.nl_response))
+    )
+    return any_extraction, bead_list, md_table, note
 
 
 def recognise(
@@ -267,7 +333,7 @@ def recognise(
     if not results:
         raise FastGPTError("所有图片都识别失败了")
 
-    extracted, bead_list, md_table, note = _merge(results)
+    extracted, bead_list, md_table, note = _merge(results, len(images))
     model = next((r.model for _, r in results if r.model), models[0])
     return BatchResult(extracted, bead_list, md_table, note, model, outcomes)
 

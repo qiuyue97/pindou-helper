@@ -234,7 +234,11 @@ class SmartExtractOut(BaseModel):
 class PatternImageOut(BaseModel):
     """一张图的下场。前台用它把失败的那几张单独标出来。"""
 
+    #: 用户上传时的序号，只用来排序和显示
     index: int
+    #: 这张图在 job.images 里的位置，也就是 /api/patterns/{id}/images/{N} 的 N。
+    #: 校验就没过的图没有存下原图，所以是 null——前端据此决定能不能点开看。
+    image_index: int | None = None
     filename: str = ""
     #: ok | failed
     status: str = "ok"
