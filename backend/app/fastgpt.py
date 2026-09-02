@@ -47,11 +47,51 @@ def _headers(settings: Settings) -> dict[str, str]:
     return {"Authorization": f"Bearer {settings.fastgpt_api_key}"}
 
 
+# 文件头 -> (后缀, MIME)，先匹配到的算数。
+#
+# 为什么不能信文件名：FastGPT 上传时会嗅探内容，一旦后缀和真实类型对不上就直接
+# 拒掉（UploadFileTypeMismatch，返回 500），而且它注释里写明了故意不帮忙改名。
+# 而用户手上的图纸大量来自微信/QQ 转存，JPEG 被存成 .png 是常态不是特例——手上
+# 6 张样例里就有 2 张是这样。
+_MAGIC: tuple[tuple[bytes, str, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", ".png", "image/png"),
+    (b"\xff\xd8\xff", ".jpg", "image/jpeg"),
+    (b"GIF87a", ".gif", "image/gif"),
+    (b"GIF89a", ".gif", "image/gif"),
+    (b"BM", ".bmp", "image/bmp"),
+)
+
+
+def sniff_image(data: bytes) -> tuple[str, str] | None:
+    """从字节本身判断图片类型，返回 (后缀, MIME)；不认识就返回 None。"""
+    for magic, ext, mime in _MAGIC:
+        if data.startswith(magic):
+            return ext, mime
+    # WebP 是 RIFF 容器，类型标在第 8-12 字节
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp", "image/webp"
+    return None
+
+
+def normalise_name(filename: str, data: bytes) -> tuple[str, str]:
+    """把文件名的后缀改成和内容一致，返回 (文件名, MIME)。
+
+    认不出类型时保持原样，把判断交给服务端——这里的职责是消除"后缀在说谎"这一种
+    情况，不是替服务端做格式白名单。
+    """
+    sniffed = sniff_image(data)
+    if sniffed is None:
+        return filename, mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    ext, mime = sniffed
+    stem = os.path.splitext(filename or "")[0] or "image"
+    return stem + ext, mime
+
+
 def upload_image(
     client: httpx.Client, settings: Settings, data: bytes, filename: str, chat_id: str
 ) -> str:
     """把一张图传到 FastGPT，返回可公开访问的 previewUrl。"""
-    content_type = mimetypes.guess_type(filename)[0] or "image/png"
+    filename, content_type = normalise_name(filename, data)
     base = settings.fastgpt_base_url.rstrip("/")
 
     res = client.post(
@@ -161,10 +201,18 @@ def recognise(
 
 
 def save_upload(root: str, user_id: int, filename: str, data: bytes) -> str:
-    """存一张原图，返回相对存储根目录的路径。"""
-    ext = os.path.splitext(filename)[1].lower() or ".png"
-    if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
-        ext = ".png"
+    """存一张原图，返回相对存储根目录的路径。
+
+    后缀同样按内容定，不按传进来的文件名——否则本地这份副本会以 .png 存着一个
+    JPEG，用户回看时浏览器多半还能显示，但下次要拿它重传就又会踩同一个坑。
+    """
+    sniffed = sniff_image(data)
+    if sniffed is not None:
+        ext = sniffed[0]
+    else:
+        ext = os.path.splitext(filename)[1].lower() or ".png"
+        if ext not in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"):
+            ext = ".png"
     rel = f"{user_id}/{uuid.uuid4().hex}{ext}"
     full = os.path.join(root, rel)
     os.makedirs(os.path.dirname(full), exist_ok=True)

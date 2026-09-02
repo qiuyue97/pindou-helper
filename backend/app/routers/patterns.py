@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.db import get_session, get_sessionmaker
 from app.deps import require_vip
-from app.fastgpt import FastGPTError, read_upload, recognise, save_upload
+from app.fastgpt import FastGPTError, read_upload, recognise, save_upload, sniff_image
 from app.models import PatternJob, User
 from app.schemas import PatternJobOut, PatternJobSummary
 
@@ -106,14 +106,18 @@ async def create_pattern_job(
 
     payloads: list[tuple[str, bytes]] = []
     for f in files:
-        if f.content_type not in _IMAGE_TYPES:
-            raise HTTPException(status_code=422, detail=f"不支持的图片格式: {f.content_type}")
         data = await f.read()
         if len(data) > settings.upload_max_bytes:
             raise HTTPException(
                 status_code=422,
                 detail=f"单张图片不能超过 {settings.upload_max_bytes // 1024 // 1024} MB",
             )
+        # 浏览器报的 content_type 是从后缀推出来的，后缀错它就跟着错，所以格式
+        # 校验以内容为准；后面的上传和落盘也都按嗅探结果走，不再看文件名。
+        sniffed = sniff_image(data)
+        if sniffed is None or sniffed[1] not in _IMAGE_TYPES:
+            got = sniffed[1] if sniffed else (f.content_type or "未知")
+            raise HTTPException(status_code=422, detail=f"不支持的图片格式: {got}")
         payloads.append((f.filename or "image.png", data))
 
     # 原图先落到本地卷：FastGPT 的 previewUrl 不受我们控制，也不保证留多久，

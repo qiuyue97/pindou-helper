@@ -16,6 +16,7 @@ from app.models import PatternJob, User
 from tests.conftest import XRW
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01" + b"0" * 64
 
 
 def _set_vip(username: str, value: bool) -> None:
@@ -96,6 +97,41 @@ def test_rejects_a_non_image(vip_client):
     )
     assert res.status_code == 422
     assert "不支持的图片格式" in res.json()["detail"]
+
+
+def test_rejects_something_that_only_claims_to_be_an_image(vip_client):
+    """一个 .png 名字套在非图片内容上，不能因为名字像图片就放行。"""
+    res = vip_client.post(
+        "/api/patterns",
+        files=[("files", ("fake.png", io.BytesIO(b"not an image at all"), "image/png"))],
+        headers=XRW,
+    )
+    assert res.status_code == 422
+    assert "不支持的图片格式" in res.json()["detail"]
+
+
+def test_a_jpeg_named_png_is_accepted_and_stored_as_jpg(vip_client, monkeypatch):
+    """后缀说谎的图要收下，并按真实类型存。
+
+    微信/QQ 转存出来的图纸经常是 JPEG 却叫 .png。之前这种图会一路带着错误的
+    后缀和 content-type 送到 FastGPT，被它的内容嗅探打回（UploadFileTypeMismatch，
+    500），表现成"多传几张就上传失败"。
+    """
+    _stub_ok(monkeypatch)
+    res = vip_client.post(
+        "/api/patterns",
+        files=[("files", ("photo.png", io.BytesIO(JPEG), "image/png"))],
+        headers=XRW,
+    )
+    assert res.status_code == 202
+    job_id = res.json()["id"]
+    _wait_for(vip_client, job_id, "done")
+
+    with get_sessionmaker()() as session:
+        rels = list(session.get(PatternJob, job_id).images)
+    assert len(rels) == 1
+    assert rels[0].endswith(".jpg"), rels[0]
+    assert vip_client.get(f"/api/patterns/{job_id}/images/0").content == JPEG
 
 
 def test_rejects_too_many_images(vip_client, monkeypatch):
