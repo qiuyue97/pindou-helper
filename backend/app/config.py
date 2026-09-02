@@ -53,6 +53,21 @@ class Settings(BaseSettings):
     #: 压不进预算的图会跳过它们，直接找吃 URL 的模型。
     inline_limited: str = "kimi"
 
+    # --- 图纸识别（VIP）：MinerU 精准解析 ---
+    #: 空 = 不去调 MinerU，整条 pipeline 走颜色兜底并把每个格子标红。
+    #: 这是可用的降级，不是错误配置。
+    mineru_token: str = ""
+    #: 单次解析的轮询上限。vlm 的排队时长不可控，给足；整个调用在后台线程里，
+    #: 卡住也不影响前台。
+    mineru_timeout: float = 600.0
+    #: 失败重试次数，指数退避。传输失败和「表格形状不对」都算失败。
+    mineru_tries: int = 5
+    #: 同时在跑的识别数。CV 是 CPU 密集的，NAS（i5-12500t）上放开会拖垮 API 响应。
+    sheet_concurrency: int = 2
+    #: rows×cols 的硬上限。行列数是用户手填的，手滑一个数量级会让内存直接爆掉；
+    #: 40000 比最大的真实样本（104×104 = 10,816）还宽松四倍。
+    sheet_max_cells: int = 40000
+
     @property
     def fastgpt_model_list(self) -> list[str]:
         return [m.strip() for m in self.fastgpt_models.split(",") if m.strip()]
@@ -69,6 +84,10 @@ class Settings(BaseSettings):
     @property
     def inline_limited_list(self) -> list[str]:
         return [m.strip().lower() for m in self.inline_limited.split(",") if m.strip()]
+
+    @property
+    def mineru_configured(self) -> bool:
+        return bool(self.mineru_token)
 
     @property
     def fastgpt_configured(self) -> bool:

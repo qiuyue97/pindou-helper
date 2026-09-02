@@ -269,3 +269,94 @@ class PatternJobSummary(BaseModel):
     #: 已完成但用户还没看过的数量——前台的红点就是它
     unseen: int = 0
     running: int = 0
+
+
+# --- 图纸识别（VIP）---
+
+
+class SheetGuessOut(BaseModel):
+    """上传后立刻返回的初始猜测。
+
+    rect/rows/cols 是给用户当起点的，snap_x/snap_y 是拖角时的吸附靶点。
+    检测不到点阵时 snap 是空的、rect 给整图——那不是失败，用户自己拖框。
+    """
+
+    id: int
+    width: int
+    height: int
+    rect: list[float] = []
+    rows: int = 0
+    cols: int = 0
+    snap_x: list[float] = []
+    snap_y: list[float] = []
+    #: "lattice" = 自动检测到；"manual" = 没检测到，这些值只是整图的边界
+    source: str = "manual"
+
+
+class SheetOut(BaseModel):
+    id: int
+    status: str
+    width: int
+    height: int
+    rect: list[float] = []
+    rows: int = 0
+    cols: int = 0
+    has_blanks: bool = False
+    palette: str = "221"
+    snap_x: list[float] = []
+    snap_y: list[float] = []
+    labels: list[int] = []
+    classes: list[dict] = []
+    counts: list[dict] = []
+    overrides: dict[str, str] = {}
+    prior: dict[str, int] = {}
+    engine: str = ""
+    #: false = 这张图的填充色是一段连续谱而不是几十个分立的类，整张走了颜色兜底
+    structured: bool = True
+    error: str = ""
+    seen: bool = False
+    #: 有效矩阵上每个色号多少格，由 labels+classes+overrides 现推
+    tally: dict[str, int] = {}
+    created_at: datetime
+    finished_at: datetime | None = None
+
+
+class SheetSummary(BaseModel):
+    sheets: list[SheetOut] = []
+    running: int = 0
+
+
+class RecogniseIn(BaseModel):
+    """用户确认过的几何。下游 pipeline 只吃这几个数。"""
+
+    rect: list[float] = Field(min_length=4, max_length=4)
+    rows: int = Field(ge=1)
+    cols: int = Field(ge=1)
+    has_blanks: bool = False
+    palette: Literal["221", "291"] = "221"
+
+
+class ClassPatch(BaseModel):
+    k: int
+    code: str
+
+
+class ClassPatchIn(BaseModel):
+    patches: list[ClassPatch] = Field(min_length=1)
+
+
+class CellPatch(BaseModel):
+    r: int
+    c: int
+    #: 空串 = 撤销这一格的人工修正，回到它所属类的色号
+    code: str = ""
+
+
+class CellPatchIn(BaseModel):
+    patches: list[CellPatch] = Field(min_length=1)
+
+
+class PriorIn(BaseModel):
+    """AI 抽取的图例，用户改过的版本。数量为 0 表示删掉这一行。"""
+
+    prior: dict[str, int] = {}
