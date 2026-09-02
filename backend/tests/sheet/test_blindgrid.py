@@ -48,7 +48,7 @@ def test_the_tile_is_the_group_median_not_a_member():
     g = _glyph(5)
     bad = g.copy()
     bad[:5] = 255.0
-    tiles, group = dedupe([g, g.copy(), bad], eps=0.9)
+    tiles, _ = dedupe([g, g.copy(), bad], eps=0.9)
     assert len(tiles) == 1
     assert np.allclose(tiles[0], np.median(np.stack([g, g, bad]), axis=0))
 
