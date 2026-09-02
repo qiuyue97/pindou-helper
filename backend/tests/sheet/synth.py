@@ -27,6 +27,18 @@ class SynthSheet:
     palette: str
 
 
+def _blend_line(img, p0, p1, colour, width, alpha=0.75):
+    """把一条线**半透明**地叠到图上。
+
+    `cv2.line` 是实心覆盖，两族线颜色相同时交叉点没有梯度。叠加则会在交叉处再压
+    暗一次，这正是真实生成器的行为，也是小 pitch 图纸还能被检测到的原因。
+    """
+    layer = img.copy()
+    cv2.line(layer, p0, p1, colour, width)
+    touched = (layer != img).any(axis=2)
+    img[touched] = (img[touched] * (1 - alpha) + layer[touched] * alpha).astype(np.uint8)
+
+
 def make_sheet(codes, pitch=27, margin=40, sep=(60, 60, 60), sep_w=2,
                jitter=0.0, seed=0, font_scale=0.34, palette="221") -> SynthSheet:
     """按给定的色号矩阵画一张图纸。
@@ -60,13 +72,22 @@ def make_sheet(codes, pitch=27, margin=40, sep=(60, 60, 60), sep_w=2,
                         cv2.FONT_HERSHEY_SIMPLEX, font_scale, ink, 1,
                         cv2.LINE_AA)
 
-    # 分隔线最后画，盖在格子上，和真实图纸一样
+    # 分隔线最后画，盖在格子上。**半透明叠加**，不是实心填充——这一点必须照抄
+    # 真实生成器，否则整张图在小 pitch 下根本检测不出来：
+    #
+    # 实心画法下，横竖两条线颜色完全相同，交叉点两侧一模一样，梯度精确为零。于是
+    # 竖直分隔线的梯度每隔一个 pitch 就被打断一次，最长连续段只有 pitch-2；
+    # _line_maps 的开运算要求 25 像素的连续段，pitch 27 勉强够、20 以下全军覆没。
+    #
+    # 真实图纸不是这样：量 0968037（pitch 13.4）的像素，格子灰 60、横线 20、
+    # 竖线 52，而**交叉点 17，比两条线都暗**——半透明叠加会把交叉处再压暗一次，
+    # 梯度因此不为零，连续段一路贯通。
     for j in range(cols + 1):
         x = margin + j * pitch
-        cv2.line(img, (x, margin), (x, margin + rows * pitch), sep, sep_w)
+        _blend_line(img, (x, margin), (x, margin + rows * pitch), sep, sep_w)
     for i in range(rows + 1):
         y = margin + i * pitch
-        cv2.line(img, (margin, y), (margin + cols * pitch, y), sep, sep_w)
+        _blend_line(img, (margin, y), (margin + cols * pitch, y), sep, sep_w)
 
     return SynthSheet(
         image=img,

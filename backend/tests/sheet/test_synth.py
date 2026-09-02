@@ -40,9 +40,27 @@ def test_a_code_is_actually_printed_on_the_cell():
 
 
 def test_separators_are_drawn_between_cells():
+    """分隔线要比两边的格子暗。
+
+    判据是**相对**的：分隔线是半透明叠上去的（真实生成器就是这么画的，交叉点因此
+    比两条线都暗，小 pitch 的图纸才检测得到），所以它的绝对灰度取决于底下格子的
+    颜色，钉一个绝对阈值只会在换色号时莫名其妙地失败。
+    """
     s = make_sheet([["A1", "A2"]], pitch=40, margin=20, sep=(0, 0, 0))
-    # x=60 是两格之间那条线
-    assert s.image[30, 60].max() < 40
+    line = float(s.image[30, 60].mean())      # x=60 是两格之间那条线
+    left = float(s.image[30, 45].mean())
+    right = float(s.image[30, 75].mean())
+    assert line < left - 20 and line < right - 20, (line, left, right)
+
+
+def test_crossings_are_darker_than_either_line():
+    """交叉点必须比横线和竖线都暗——这正是真实图纸的样子，也是小 pitch 还能被
+    检测到的原因：竖线的梯度不会在每个交叉点归零，连续段一路贯通。"""
+    s = make_sheet([["A1", "A2"], ["A3", "A4"]], pitch=40, margin=20, sep=(0, 0, 0))
+    cross = float(s.image[60, 60].mean())
+    vert = float(s.image[30, 60].mean())
+    horiz = float(s.image[60, 30].mean())
+    assert cross < vert and cross < horiz, (cross, vert, horiz)
 
 
 def test_random_sheets_use_exactly_the_requested_number_of_codes():
