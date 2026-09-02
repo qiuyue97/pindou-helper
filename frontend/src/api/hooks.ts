@@ -5,6 +5,8 @@ import type {
   InventoryRow,
   OperationRow,
   PatternJobSummary,
+  Sheet,
+  SheetSummary,
   StockoutOut,
 } from './types';
 
@@ -68,5 +70,30 @@ export function useApiMutation<TVars, TData>(
     onSuccess: async () => {
       if (opts.invalidate !== false) await invalidateAll();
     },
+  });
+}
+
+/**
+ * 识别在服务端的后台线程里跑，只能靠问。在跑的时候勤问，跑完了就别再问。
+ * `enabled` 让普通账号不去撞 403。
+ */
+export function useSheet(id: number | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['sheet', id],
+    enabled: enabled && id != null,
+    queryFn: () => apiGet<Sheet>(`/api/sheets/${id}`),
+    refetchInterval: (query) => {
+      const s = query.state.data?.status;
+      return s === 'pending' || s === 'running' ? 2000 : false;
+    },
+  });
+}
+
+export function useSheets(enabled: boolean) {
+  return useQuery({
+    queryKey: ['sheets'],
+    enabled,
+    queryFn: () => apiGet<SheetSummary>('/api/sheets'),
+    refetchInterval: (query) => (query.state.data?.running ? 3000 : false),
   });
 }

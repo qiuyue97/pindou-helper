@@ -167,3 +167,88 @@ export interface PatternJobSummary {
   unseen: number;
   running: number;
 }
+
+/** 上传后立刻返回的初始猜测。source='manual' 表示没检测到点阵，用户自己拖框。 */
+export interface SheetGuess {
+  id: number;
+  width: number;
+  height: number;
+  rect: number[];
+  rows: number;
+  cols: number;
+  /** 真实检测到的分隔线位置，拖角时吸附到它们上。检测失败就是空的。 */
+  snap_x: number[];
+  snap_y: number[];
+  source: 'lattice' | 'manual';
+}
+
+export type SheetLevel = 'ok' | 'warn' | 'count' | 'guess';
+
+/** 一个颜色类。level 决定卡片排在哪、显示什么颜色。 */
+export interface SheetClass {
+  klass: number;
+  code: string;
+  /** ocr = 读出来的；guess = 什么都没读出来，拿类心色猜的 */
+  source: 'ocr' | 'guess';
+  level: SheetLevel;
+  /** 类心色与 code 的目录色的 dE00 */
+  de: number;
+  n: number;
+  radius: number;
+  rgb: number[];
+  nearest: string;
+  nearest_de: number;
+  /** OCR 不受先验约束时的答案。和 code 不一致就是要给用户看的东西。 */
+  read_full: string | null;
+  off_list: boolean;
+  /** 同码多类且颜色差得远时，这些类心色两两 dE00 的最大值 */
+  dup: number | null;
+  /** 成员的扁平下标（r * cols + c） */
+  cells: number[];
+}
+
+/** 对账表的一行。按**色号**，不是按类——一个色号名下的多个类合并成一行。 */
+export interface CountRow {
+  code: string;
+  /** 本图数出来多少格 */
+  sheet: number;
+  /** AI 说有多少。null = 图例里没有这个色号 */
+  prior: number | null;
+  /** 名下有哪些类。改这一行的色号要把它们全带上。 */
+  classes: number[];
+  level: SheetLevel;
+}
+
+export interface Sheet {
+  id: number;
+  status: 'pending' | 'ready' | 'running' | 'done' | 'failed';
+  width: number;
+  height: number;
+  rect: number[];
+  rows: number;
+  cols: number;
+  has_blanks: boolean;
+  palette: '221' | '291';
+  snap_x: number[];
+  snap_y: number[];
+  /** rows*cols 个类下标；-1 = 空格 */
+  labels: number[];
+  classes: SheetClass[];
+  counts: CountRow[];
+  /** {"12,34": "H15"} 稀疏的逐格人工修正 */
+  overrides: Record<string, string>;
+  prior: Record<string, number>;
+  engine: string;
+  /** false = 这张图的填充色是一段连续谱，整张走了颜色兜底 */
+  structured: boolean;
+  error: string;
+  seen: boolean;
+  tally: Record<string, number>;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export interface SheetSummary {
+  sheets: Sheet[];
+  running: number;
+}
