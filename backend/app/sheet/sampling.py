@@ -60,11 +60,26 @@ def sample_cells(im, rect, rows, cols, inset_frac=0.15, core_frac=0.52):
     return fill[..., ::-1], inked          # BGR -> RGB
 
 
-def _build_glyphs_percell(im, fill, rect, rows, cols, up=UP):
-    """逐格 warpAffine 的参考实现。
+def build_glyphs(im, fill, rect, rows, cols, up=UP):
+    """每格一张除掉填充色的墨迹图，全部落在同一个亚像素栅格上。
 
-    保留它是为了给整图一次 warp 的快路径当 oracle：那条路的「数学上等价」是推理
-    出来的，必须有东西能逐像素比对才敢用。
+    每格按它**真实的小数偏移**重采样——没有这一步，类的中位图只是各种相位的糊影。
+
+    `ink = max|patch − fill|` 跨通道取最大。除掉填充色之后墨迹图与颜色无关，
+    所以同一个色号被颜色抖动裂成两个类时，两边的字形仍然可比。
+
+    ---
+
+    **不要把它改成「整块 rect 一次放大再切片」。试过了，两条路都不成立：**
+
+    直接切：切片起点 `round((j*px+ix)*up)` 有最多半个大图像素的相位误差，实测
+    pitch 13 时与逐格版的均值差 16.97/255（最大 69），而相位对齐正是这个函数
+    存在的唯一理由。
+    让 `px*up` 取整以消掉舍入：每格会累积漂移，104 格下漂十几个源像素，更糟。
+
+    而且不值得。实测最难的真图（0968037，104x104 = 10,816 格）整个 CV 阶段
+    1.43s，这一步占 0.56s；整图版也只快 2.1x，省下 0.3s。MinerU 的排队是秒到
+    数十秒级，这里根本不是瓶颈。
     """
     x0, y0, x1, y1 = rect
     px, py = (x1 - x0) / cols, (y1 - y0) / rows
@@ -95,12 +110,3 @@ def _glyph_box(px, py, up):
     return ix, iy, w, h
 
 
-def build_glyphs(im, fill, rect, rows, cols, up=UP):
-    """每格一张除掉填充色的墨迹图，全部落在同一个亚像素栅格上。
-
-    每格按它**真实的小数偏移**重采样——没有这一步，类的中位图只是各种相位的糊影。
-
-    `ink = max|patch − fill|` 跨通道取最大。除掉填充色之后墨迹图与颜色无关，
-    所以同一个色号被颜色抖动裂成两个类时，两边的字形仍然可比。
-    """
-    return _build_glyphs_percell(im, fill, rect, rows, cols, up)
