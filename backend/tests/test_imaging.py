@@ -125,7 +125,8 @@ def test_giving_up_is_reported_rather_than_downscaling():
     out = fit_inline(_noise(300, 300), budget=1)
     assert not out.within_budget
     assert _size(out.data) == (300, 300)
-    assert out.notes and "不受此限" in out.notes[0]
+    # 说明只进日志，不上用户界面，但必须说清楚为什么改了模型
+    assert out.notes and "仍超出" in out.notes[0]
 
 
 def test_undecodable_data_is_passed_through_untouched():
@@ -133,3 +134,13 @@ def test_undecodable_data_is_passed_through_untouched():
     out = fit_inline(junk, budget=1)
     assert out.data == junk
     assert not out.within_budget
+
+
+def test_the_note_prints_a_fractional_budget_correctly():
+    """1.9MB 不能显示成 1MB。
+
+    整数除法把 1,992,294 字节打成 "1MB"，用户看到就会以为预算被砍到了 1 MB。
+    """
+    out = fit_inline(_noise(300, 300), budget=1992294)
+    for n in out.notes:
+        assert "1MB" not in n, n

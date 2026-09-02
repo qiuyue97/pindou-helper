@@ -92,6 +92,8 @@ class Fitted:
     within_budget: bool
     de_mean: float = 0.0
     de_p99: float = 0.0
+    #: 排查用的说明，只进日志。压缩做了什么是我们的实现细节，用户对着它做不了
+    #: 任何决定——真要提醒的是"这张图没认出来"，那是 status 的事。
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -224,13 +226,12 @@ def fit_inline(data: bytes, budget: int = INLINE_LIMIT) -> Fitted:
     p8 = _png(pal)
     if len(p8) <= budget:
         mean, p99 = _colour_shift(im, pal)
-        notes = []
-        if p99 > DE_WARN:
-            notes.append(
-                f"为压到 {budget // 1024 // 1024}MB 以内做了 256 色量化，"
-                f"局部色差 dE {p99:.1f}（相邻色号最近只差 2.7），仅用于读取文字"
-            )
-        return Fitted(p8, ".png", "image/png", "png8", True, mean, p99, notes)
+        note = (f"压到 {budget / 1048576:.1f}MB 以内做了 256 色量化，"
+                f"色差 dE 均值 {mean:.2f} p99 {p99:.1f}"
+                + ("（超过 %.1f，只够读文字，不能拿来取色）" % DE_WARN
+                   if p99 > DE_WARN else ""))
+        (log.warning if p99 > DE_WARN else log.info)("%s", note)
+        return Fitted(p8, ".png", "image/png", "png8", True, mean, p99, [note])
 
     # 3. 还超。不降分辨率，交给不吃内联的模型。
     best, step = min(((data, "original"), (small, "png-recompress"), (p8, "png8")),
@@ -241,5 +242,6 @@ def fit_inline(data: bytes, budget: int = INLINE_LIMIT) -> Fitted:
         "image/png" if step != "original" else mime,
         step,
         False,
-        notes=[f"压到 {len(best) / 1048576:.1f}MB 仍超出内联上限，改用不受此限的模型"],
+        notes=[f"压到 {len(best) / 1048576:.1f}MB 仍超出 {budget / 1048576:.1f}MB 预算，"
+               f"改用不受内联上限约束的模型"],
     )

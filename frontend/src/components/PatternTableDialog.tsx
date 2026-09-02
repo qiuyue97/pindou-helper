@@ -28,8 +28,9 @@ export default function PatternTableDialog({
   );
   const reasonOf = (imageIndex: number) =>
     items.find((i) => i.image_index === imageIndex)?.error || '识别失败';
-  // Anything the user should read: what failed, and what a compression cost.
-  const problems = items.filter((i) => i.status === 'failed' || i.notes.length > 0);
+  // Only failures. What the compression did to an image is an implementation
+  // detail the user cannot act on; it goes to the log, not to their screen.
+  const problems = items.filter((i) => i.status === 'failed');
 
   return (
     <>
@@ -98,15 +99,9 @@ export default function PatternTableDialog({
         {problems.length > 0 && (
           <ul className="pattern-problems">
             {problems.map((it) => (
-              <li key={it.index} className={it.status === 'failed' ? 'error' : 'muted'}>
+              <li key={it.index} className="error">
                 {it.image_index === null ? '' : `图片${it.image_index + 1} · `}
-                {it.filename}
-                {it.status === 'failed' ? `：${it.error || '识别失败'}` : ''}
-                {it.notes.map((n) => (
-                  <div key={n} className="muted">
-                    {n}
-                  </div>
-                ))}
+                {it.filename}：{it.error || '识别失败'}
               </li>
             ))}
           </ul>

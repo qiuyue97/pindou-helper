@@ -282,7 +282,11 @@ def recognise(
                 log.warning("第 %d 张上传失败：%s", i + 1, exc)
                 outcomes[i] = ImageOutcome(i, name, "failed", _brief(exc))
                 continue
-            outcomes[i] = ImageOutcome(i, name, "ok", notes=list(fitted.notes))
+            # fitted.notes 只进日志：压缩做了什么是实现细节，用户对着它做不了任何
+            # 决定。要告诉用户的是这张图有没有认出来，那是 status 的事。
+            for n in fitted.notes:
+                log.info("第 %d 张（%s）：%s", i + 1, name, n)
+            outcomes[i] = ImageOutcome(i, name, "ok")
             uploaded.append((i, url, fitted.within_budget, fitted.size))
 
         if not uploaded:
