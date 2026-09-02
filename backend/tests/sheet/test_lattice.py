@@ -9,7 +9,7 @@
 
 import numpy as np
 
-from app.sheet.lattice import detect
+from app.sheet.lattice import detect, pattern
 from tests.sheet.synth import make_random_sheet
 
 
@@ -64,3 +64,55 @@ def test_jitter_does_not_move_the_frame():
     b = detect(make_random_sheet(20, 20, 5, seed=4, jitter=2.0).image)
     assert a is not None and b is not None
     assert np.allclose(a.rect, b.rect, atol=1.5)
+
+
+# ---------- pattern() 的可信度闸 ----------
+
+def _strips(rows, cols, content_rows, content_cols):
+    """造一对 (fill, inked)：指定的行列是「有字的深色」，其余是「无字的浅色」。"""
+    fill = np.full((rows, cols, 3), 250, np.uint8)     # 浅 = 家具
+    inked = np.zeros((rows, cols), bool)
+    for i in content_rows:
+        for j in content_cols:
+            fill[i, j] = 40                            # 深 = 画面
+            inked[i, j] = True
+    # 家具带也要有字（标尺上印着数字），否则它是靠 ink 而不是靠 light 被排除的
+    inked[:, :] = True
+    return fill, inked
+
+
+def test_pattern_finds_the_artwork_block():
+    fill, inked = _strips(20, 20, range(2, 18), range(2, 18))
+    assert pattern(fill, inked) == ((2, 18), (2, 18))
+
+
+def test_pattern_refuses_a_block_smaller_than_half_the_lattice():
+    """切出来的块小得离谱，说明判据的前提垮了，不是真找到了画面。
+
+    两条判据各有一种整片失效的情形——有空白格时「每格都印着色号」不成立，
+    画面背景很淡时「家具才是淡的」不成立。调阈值救不了，因为垮的是前提。
+    共同的可观测后果就是块小得离谱，所以在这里拦住，让调用方退回整个点阵。
+    """
+    fill, inked = _strips(20, 20, range(8, 12), range(8, 12))   # 4x4 = 4%
+    assert pattern(fill, inked) is None
+
+
+def test_the_threshold_sits_in_a_measured_gap_not_on_a_tuned_value():
+    """13 张人工确认的图纸上，面积占比在 83.8% 和 42.1% 之间有 42 个百分点的空当：
+    空当之上 6 好 1 坏，空当之下 6 张全坏。0.5 取在空当正中。"""
+    fill, inked = _strips(20, 20, range(12), range(20))   # 60% > 50%
+    assert pattern(fill, inked) == ((0, 12), (0, 20))
+    fill, inked = _strips(20, 20, range(8), range(20))    # 40% < 50%
+    assert pattern(fill, inked) is None
+
+
+def test_an_over_large_frame_is_preferred_to_a_wrong_small_one():
+    """闸门触发时 detect 退回整个点阵，而不是交出那个小框。
+
+    框大了用户往里收一下就行；一个错的小框会骗过人眼，那才是真正的坏结果。
+    """
+    s = make_random_sheet(rows=30, cols=28, n_codes=9, pitch=27, seed=0)
+    g = detect(s.image)
+    assert g is not None
+    # 这张是密铺的，pattern 该被采纳，收到真值
+    assert (g.rows, g.cols) == (s.rows, s.cols)

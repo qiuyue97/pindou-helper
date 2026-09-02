@@ -238,7 +238,8 @@ def _longest_run(flags, gap=1):
     return best
 
 
-def pattern(fill, inked, ink=0.9, light_frac=0.85, light=190, gap=1):
+def pattern(fill, inked, ink=0.9, light_frac=0.85, light=190, gap=1,
+            min_frac=0.5):
     """点阵里真正是画面的那一块，返回 (行区间, 列区间) 或 None。
 
     `_extent` 定的是**点阵**的边界，而点阵通常比画面大一圈：标尺、坐标框、页脚、
@@ -258,8 +259,29 @@ def pattern(fill, inked, ink=0.9, light_frac=0.85, light=190, gap=1):
     因为每个坐标格**平均**下来仍然是淡的。
 
     连续段允许桥接一条非画面带，这样一行发白的豆子（色号几乎读不出来）不会把画面
-    拦腰截断。反过来，设计本身若有一整行很淡的颜色会被丢掉——那是「按内容判断而
-    不是按位置判断」的已知代价。
+    拦腰截断。
+
+    ---
+
+    **`min_frac`：算出来的画面块小于点阵的这个比例，就当作没找到。**
+
+    上面两条判据各有一种会整片失效的情形，实测 13 张人工确认的图纸：
+
+      有空白格   「豆子格一定印着色号」不成立。4 张有空格的图全部灾难性出错，
+                 偏差 632 / 906 / 1502 / 3328 px。
+      画面本身淡  D63E4322 的背景色 H2 占了 2961 颗且很浅，整片外围行被当成家具
+                 丢掉，65x65 收成 20x24，偏差 2689 px。
+
+    这两种情形下失效的不是某个阈值，而是判据的前提，所以调 ink / light 救不了。
+    但它们有一个共同的、可观测的后果：切出来的块小得离谱。实测面积占比在
+    83.8% 和 42.1% 之间有 42 个百分点的空当，空当之上 6 好 1 坏，空当之下 6 张全坏。
+
+    0.5 取在空当正中，它不是调出来的阈值而是一句定义：如果你认定的「画面块」还不到
+    你检测出的点阵的一半，那你几乎肯定是切进画面里了，而不是修掉了家具。
+
+    这时返回 None，调用方退回整个点阵——那是诚实的答案。整个点阵最差也只差
+    156 px（通常 15-105），而且**永远是偏大**，用户往里收一下就行；一个错的小框
+    会骗过人眼，那才是真正的坏结果。
     """
     fill = np.asarray(fill)
     inked = np.asarray(inked)
@@ -275,6 +297,9 @@ def pattern(fill, inked, ink=0.9, light_frac=0.85, light=190, gap=1):
     rr, cc = _longest_run(rows, gap), _longest_run(cols, gap)
     if not rr or not cc:
         return None
+    nr, nc = rr[1] - rr[0] + 1, cc[1] - cc[0] + 1
+    if nr * nc < min_frac * fill.shape[0] * fill.shape[1]:
+        return None                       # 见上：小得离谱就是切进画面了
     return (rr[0], rr[1] + 1), (cc[0], cc[1] + 1)
 
 
