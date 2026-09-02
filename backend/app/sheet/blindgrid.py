@@ -6,14 +6,38 @@
 满分，但那证明不了任何事——它读的是我们写的字。
 """
 
+import math
 from html.parser import HTMLParser
 
 import numpy as np
 from PIL import Image, ImageDraw
 from sklearn.cluster import AgglomerativeClustering
 
-PER_ROW = 10
+#: 一页最多 16 列 x 16 行。上千块瓦片拼成一张长条，一页错一行、整页答案全部错位；
+#: 分页把爆炸半径限制在一页之内，一页读坏了只重读那一页。
+MAX_ROW = 16
+PER_PAGE = MAX_ROW * MAX_ROW
 CELL_W, CELL_H = 300, 150
+
+
+def columns_for(n: int, max_row: int = MAX_ROW) -> int:
+    """这一页排几列——**让页面接近正方**。
+
+    这是打真实接口量出来的，不是设计出来的。同样的内容，只改长宽比：
+
+        4802 x  302 (16 列, 宽高比 15.9)  32 块只回来 16 块，整整一行没了，
+                                          而且退化成管道符而不是 HTML 表格
+        1802 x  902 (6 列,  宽高比  2.0)  32 块全对
+         902 x  602 (6 列,  宽高比  1.5)  32 块全对
+        4802 x 2402 (16 列, 宽高比  2.0)  256 块全对，顺序全对
+        2402 x 1602 (16 列, 宽高比  1.5)  256 块全对，顺序全对
+
+    决定成败的是长宽比，不是块数：又宽又扁的图被缩到标准宽度后字形就糊没了。
+    所以列数取 ceil(sqrt(n))，只在页满时才到 16。
+    """
+    if n <= 1:
+        return 1
+    return min(max_row, math.ceil(math.sqrt(n)))
 
 #: 字形向量的归一化距离。实测同色号 p50 0.219，最近的不同色号对 0.228。
 #: 宁小勿大：过度拆分只多一块瓦片，合并两个色号会把一个答案盖到两边。
@@ -45,7 +69,18 @@ def dedupe(pics, eps: float = DEDUPE_EPS):
     return tiles, g
 
 
-def blind_grid(pics, per_row: int = PER_ROW, cw: int = CELL_W,
+def pages(tiles, per_page: int = PER_PAGE):
+    """把瓦片切成若干页，每页最多 per_page 块。
+
+    一张 104x104 的图纸最多分出一千多个颜色类，去重后仍可能有几百块瓦片。拼成
+    一张细长的图不但难读，而且**一页只要错一行，那一页之后的答案全部错位**——
+    分页把这个爆炸半径限制在一页之内，一页读坏了只重读那一页。
+    """
+    tiles = list(tiles)
+    return [tiles[i:i + per_page] for i in range(0, len(tiles), per_page)] or [[]]
+
+
+def blind_grid(pics, per_row: int | None = None, cw: int = CELL_W,
                ch: int = CELL_H) -> Image.Image:
     """字形排成一张有真实框线的表，页面上再没有别的东西。
 
@@ -53,6 +88,7 @@ def blind_grid(pics, per_row: int = PER_ROW, cw: int = CELL_W,
     回来的顺序由版面分析临时决定。
     """
     pics = list(pics)
+    per_row = columns_for(len(pics)) if per_row is None else per_row
     rows = (len(pics) + per_row - 1) // per_row
     img = Image.new("RGB", (per_row * cw + 2, rows * ch + 2), "white")
     d = ImageDraw.Draw(img)
@@ -124,9 +160,11 @@ def table_cells(text: str, per_row: int, want: int):
     else:
         for line in text.splitlines():
             line = line.strip()
-            if not (line.startswith("|") and line.endswith("|")):
+            if "|" not in line:
                 continue
-            cells = [c.strip() for c in line[1:-1].split("|")]
+            # 实测 MinerU 的管道符行**不带首尾竖线**（"A17 | A18 | ..."）。
+            # 只认带首尾竖线的写法会把有效结果判成「没有表」。
+            cells = [c.strip() for c in line.strip("|").split("|")]
             if all(set(c) <= set("-: ") for c in cells):   # 表头分隔行
                 continue
             rows.append(cells)

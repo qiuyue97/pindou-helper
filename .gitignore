@@ -15,3 +15,6 @@ __pycache__/
 
 # 开发过程文档：本地保留，不推到远端
 docs/superpowers/
+
+# 探针脚本打真实接口后落下的原始响应记录，只用于本机排查
+backend/scripts/_*.json
