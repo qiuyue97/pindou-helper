@@ -106,16 +106,24 @@ export function inkOn(hex: string): string {
 const DIM_LEGEND = 0.3;
 
 /**
- * 调暗的倍率。三个通道同乘一个数，所以色相和饱和度原样保留（HSV 里只有 V 变了）,
- * 变的只是明度——是「暗一档」，不是「褪成灰」。
+ * 调淡 = **先调暗，再透明**。两步各治一个毛病，缺一个都不行：
  *
- * 定成 0.7 的依据：221 色卡里 21 个色号亮度 >= 235（最亮的 H2 是 254.7，基本就是
- * 白的），43 个 >= 220。选中一颗浅色豆子时，它旁边同样浅的格子被压到 178 以下，
- * 差出七十多级；而中等深浅的格子只暗一档，整张图的样子还在。
+ *   只透明   浅色越混越白（透明度是往白底上混），最后和空格、和白豆子糊成一片
+ *   只调暗   深色本来就暗，压了等于没压，整片黑照样抢戏
  *
- * 想更淡就往 1 调，想更沉就往 0 调，只有这一个数。
+ *   先乘 DIM_V 把明度压下来 —— 浅色不再贴着白底，而且色相饱和度一点没动，
+ *                              是「暗一档」不是「褪成灰」
+ *   再叠 DIM_A 的透明度     —— 整体退到背景里，深色也跟着被白底提起来，
+ *                              不会有一整片黑压在图上
+ *
+ * 两个数一起决定调淡后的落点：0..255 会被压进 115..213 这一段。选中的浅色豆子
+ * （221 色卡里 21 个色号亮度 >= 235，最亮的 H2 是 254.7）比它高出四十级以上，
+ * 深色也被提到 115 往上，谁都不会盖过谁。
+ *
+ * 要调就调这两个数：DIM_V 往 1 走颜色更亮，DIM_A 往 1 走存在感更强。
  */
 const DIM_V = 0.7;
+const DIM_A = 0.55;
 
 export function dimHex(hex: string): string {
   const n = Number.parseInt(hex, 16);
@@ -191,8 +199,10 @@ export function drawSheet(
       const x = ruler + c * cell;
       const y = ruler + r * cell;
       const dim = focus !== null && !focus.has(it.code);
+      ctx.globalAlpha = dim ? DIM_A : 1;
       ctx.fillStyle = `#${dim ? dimHex(it.hex) : it.hex}`;
       ctx.fillRect(x, y, cell, cell);
+      ctx.globalAlpha = 1;
       // 调淡的格子**不印色号**。每一格都印着字，满屏灰字比颜色本身更抢眼，
       // 想找的那几格反而淹在里面。选中之后只有它们带字，一眼就找得到。
       if (dim) continue;

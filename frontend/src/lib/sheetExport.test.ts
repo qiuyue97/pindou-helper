@@ -23,6 +23,7 @@ function ctxStub() {
   const fills: string[] = [];
   /** 每次 stroke 时的画笔颜色。用来把背景斜纹和网格线分开数。 */
   const strokes: string[] = [];
+  const alphas: number[] = [];
   const ctx = {
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
@@ -44,11 +45,19 @@ function ctxStub() {
     texts,
     fills,
     strokes,
+    alphas,
   } as unknown as CanvasRenderingContext2D & {
     texts: typeof texts;
     fills: string[];
     strokes: string[];
+    alphas: number[];
   };
+  Object.defineProperty(ctx, 'globalAlpha', {
+    get: () => alphas[alphas.length - 1] ?? 1,
+    set: (v: number) => {
+      alphas.push(v);
+    },
+  });
   Object.defineProperty(ctx, 'fillStyle', {
     get: () => fills[fills.length - 1] ?? '',
     set: (v: string) => {
@@ -237,7 +246,7 @@ describe('drawSheet', () => {
     expect(ctx.fills).toContain('#0000FF');
   });
 
-  it('没选中的格子填灰，不是填淡——填淡只会更白', () => {
+  it('没选中的格子既调暗、又叠透明——两步缺一不可', () => {
     const ctx = ctxStub();
     const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
     drawSheet(ctx, {
@@ -253,7 +262,12 @@ describe('drawSheet', () => {
     });
     expect(ctx.fills).toContain('#FF0000');
     expect(ctx.fills).not.toContain('#0000FF');
+    // 先调暗
     expect(ctx.fills).toContain(`#${dimHex('0000FF')}`);
+    // 再叠透明：只调暗的话，整片深色照样抢戏
+    expect(ctx.alphas.some((a) => a < 1)).toBe(true);
+    // 选中的那一格是全不透明的
+    expect(ctx.alphas[ctx.alphas.length - 1]).toBe(1);
   });
 
   it('没选中的格子不印色号——满屏灰字比颜色还抢眼', () => {
