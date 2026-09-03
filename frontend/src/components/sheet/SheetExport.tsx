@@ -1,0 +1,79 @@
+import { useState } from 'react';
+import type { Sheet } from '../../api/types';
+import {
+  type ExportCell,
+  type LegendEntry,
+  drawSheet,
+  layout,
+} from '../../lib/sheetExport';
+import { byCode } from '../../lib/sheetSort';
+import { useToast } from '../../state/ToastContext';
+import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
+
+const UNKNOWN = 'CCCCCC';
+
+/**
+ * 把校对好的图纸导出成一张 PNG：坐标标尺 + 网格线 + 格内色号 + 底部汇总。
+ *
+ * 用的是**校对之后**的归属（labels + classes + overrides），不是识别的原始输出——
+ * 用户改过的那些格子必须体现在导出的图上，否则他照着拼出来的还是错的。
+ */
+export default function SheetExport({ sheet }: { sheet: Sheet }) {
+  const { byCode: catalogue } = useEffectiveCatalog();
+  const { show } = useToast();
+  const [busy, setBusy] = useState(false);
+
+  async function download() {
+    setBusy(true);
+    try {
+      const codeOf = new Map(sheet.classes.map((c) => [c.klass, c.code]));
+      const cells: ExportCell[] = [];
+      for (let r = 0; r < sheet.rows; r += 1) {
+        for (let c = 0; c < sheet.cols; c += 1) {
+          const over = sheet.overrides[`${r},${c}`];
+          const k = sheet.labels[r * sheet.cols + c];
+          const code = over ?? (k !== undefined && k >= 0 ? codeOf.get(k) : undefined);
+          cells.push({
+            code: code ?? '',
+            hex: code ? (catalogue.get(code)?.hex ?? UNKNOWN) : UNKNOWN,
+          });
+        }
+      }
+
+      const legend: LegendEntry[] = Object.keys(sheet.tally)
+        .sort(byCode)
+        .map((code) => ({
+          code,
+          hex: catalogue.get(code)?.hex ?? UNKNOWN,
+          count: sheet.tally[code]!,
+        }));
+
+      const lay = layout(sheet.rows, sheet.cols, legend.length);
+      const canvas = document.createElement('canvas');
+      canvas.width = lay.width;
+      canvas.height = lay.height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('这个浏览器画不了 canvas');
+      drawSheet(ctx, { rows: sheet.rows, cols: sheet.cols, cells, legend, layout: lay });
+
+      const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
+      if (!blob) throw new Error('导出失败');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `图纸-${sheet.id}-${sheet.rows}x${sheet.cols}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      show(e instanceof Error ? e.message : '导出失败');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button type="button" disabled={busy || !sheet.rows} onClick={() => void download()}>
+      {busy ? '导出中…' : '下载图纸'}
+    </button>
+  );
+}

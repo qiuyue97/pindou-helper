@@ -227,3 +227,9 @@ it('完成后可以直接去识别另一张', async () => {
   show(1);
   expect(await screen.findByRole('button', { name: '识别另一张' })).toBeInTheDocument();
 });
+
+it('完成后可以下载图纸', async () => {
+  mockFetch({ 'GET /api/sheets/1': { body: sheet() } });
+  show(1);
+  expect(await screen.findByRole('button', { name: '下载图纸' })).toBeEnabled();
+});

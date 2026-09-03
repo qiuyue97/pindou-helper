@@ -6,6 +6,7 @@ import type { Sheet, SheetGuess } from '../api/types';
 import BatchDialog from '../components/BatchDialog';
 import GridConfirm, { type Geometry } from '../components/sheet/GridConfirm';
 import SheetCanvas from '../components/sheet/SheetCanvas';
+import SheetExport from '../components/sheet/SheetExport';
 import SheetReview from '../components/sheet/SheetReview';
 import SheetUpload from '../components/sheet/SheetUpload';
 import { byCode } from '../lib/sheetSort';
@@ -100,6 +101,7 @@ export default function SheetPage() {
             <button type="button" onClick={() => setDeducting(true)}>
               把这份清单送去按图扣减
             </button>
+            <SheetExport sheet={sheet} />
             <button type="button" className="ghost" onClick={() => navigate('/sheet')}>
               识别另一张
             </button>
