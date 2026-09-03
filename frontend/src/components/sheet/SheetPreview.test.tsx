@@ -158,3 +158,13 @@ it('复位回到 1 倍', () => {
   fireEvent.click(screen.getByRole('button', { name: '复位' }));
   expect(screen.getByText('滚轮或双指缩放')).toBeInTheDocument();
 });
+
+it('1 倍时完整显示，不出滚动条；放大后才变成滚动取景框', () => {
+  const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const scroll = container.querySelector('.preview-scroll') as HTMLElement;
+  expect(scroll.style.overflow).toBe('visible');
+
+  fireEvent.wheel(scroll, { deltaY: -240 });
+  expect(scroll.style.overflow).toBe('auto');
+  expect(scroll.style.maxHeight).toBe('80vh');
+})

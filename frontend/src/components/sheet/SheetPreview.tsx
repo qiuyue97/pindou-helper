@@ -155,12 +155,17 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
         )}
       </div>
 
-      {/* 放大之后画布比容器宽，容器滚动来平移；1 倍时按 maxWidth 收进容器。
+      {/* 1 倍时**完整显示**，不出滚动条——整张图收进容器宽度就够看了。放大之后
+          画布比容器大，这时才变成可滚动的取景框，滚动来平移。
           touch-action: none 让双指手势不被浏览器抢去做页面缩放。 */}
       <div
         ref={scrollRef}
         className="preview-scroll"
-        style={{ touchAction: zoom === 1 ? 'pan-x pan-y' : 'none' }}
+        style={
+          zoom === 1
+            ? { overflow: 'visible', maxHeight: 'none', touchAction: 'pan-x pan-y' }
+            : { overflow: 'auto', maxHeight: '80vh', touchAction: 'none' }
+        }
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}

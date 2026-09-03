@@ -647,10 +647,8 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .preview-zoom span {
   font-variant-numeric: tabular-nums;
 }
-/* 放大后画布比容器宽，这里滚动来平移。 */
+/* 1 倍完整显示（overflow/max-height 由组件按 zoom 现设）；放大后才变成滚动取景框。 */
 .preview-scroll {
-  max-height: 80vh;
-  overflow: auto;
   border-radius: 4px;
 }
 
