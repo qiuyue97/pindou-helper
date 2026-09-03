@@ -93,28 +93,29 @@ describe('inkOn', () => {
 });
 
 describe('dimHex', () => {
-  it('压成灰，丢掉彩度', () => {
-    const g = dimHex('FF0000');
-    expect(g.slice(0, 2)).toBe(g.slice(2, 4));
-    expect(g.slice(2, 4)).toBe(g.slice(4, 6));
+  const ch = (hex: string, i: number) => Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+
+  it('只降明度，颜色不动——变灰不等于变暗', () => {
+    // 三个通道同乘一个倍率：HSV 里只有 V 变了，色相和饱和度原样
+    const red = dimHex('FF0000');
+    expect(ch(red, 0)).toBeGreaterThan(0);
+    expect(ch(red, 1)).toBe(0);
+    expect(ch(red, 2)).toBe(0);
   });
 
-  it('灰带压在浅色豆子下面很远的地方', () => {
-    // 221 色卡里 21 个色号亮度 >= 235（最亮的 H2 是 254.7）。灰带顶得太高，
-    // 选中一颗浅色豆子时它和周围只差十几级，等于没突出。
-    const palest = Number.parseInt(dimHex('FFFFFF').slice(0, 2), 16);
-    expect(palest).toBeLessThanOrEqual(200);
-    expect(235 - palest).toBeGreaterThan(30);
+  it('通道之间的比例不变，所以色相不漂', () => {
+    const c = dimHex('CC6633');
+    expect(ch(c, 0) / ch(c, 1)).toBeCloseTo(0xcc / 0x66, 1);
+    expect(ch(c, 1) / ch(c, 2)).toBeCloseTo(0x66 / 0x33, 1);
   });
 
-  it('再黑也不会黑到看不出图案', () => {
-    expect(Number.parseInt(dimHex('000000').slice(0, 2), 16)).toBeGreaterThan(120);
+  it('浅色压下来足够多，选中的浅色豆子才衬得出来', () => {
+    // 221 色卡里 21 个色号亮度 >= 235（最亮的 H2 是 254.7，基本就是白的）
+    expect(255 - ch(dimHex('FFFFFF'), 0)).toBeGreaterThan(60);
   });
 
   it('亮度顺序保留下来，图形轮廓还看得出', () => {
-    const dark = Number.parseInt(dimHex('202020').slice(0, 2), 16);
-    const light = Number.parseInt(dimHex('E0E0E0').slice(0, 2), 16);
-    expect(dark).toBeLessThan(light);
+    expect(ch(dimHex('202020'), 0)).toBeLessThan(ch(dimHex('E0E0E0'), 0));
   });
 });
 
