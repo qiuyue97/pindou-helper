@@ -68,9 +68,11 @@ function ctxStub() {
 }
 
 describe('layout', () => {
-  it('留出四边标尺的位置', () => {
+  it('留出四边标尺的位置，外加最外一圈逐格坐标（各占一格宽）', () => {
     const l = layout(10, 10, 3, { cell: 32, ruler: 26 });
-    expect(l.width).toBe(10 * 32 + 26 * 2);
+    expect(l.ring).toBe(32);
+    expect(l.pad).toBe(26 + 32);
+    expect(l.width).toBe(10 * 32 + (26 + 32) * 2);
     expect(l.gridH).toBe(320);
   });
 
@@ -118,9 +120,11 @@ describe('dimHex', () => {
     expect(ch(c, 1) / ch(c, 2)).toBeCloseTo(0x66 / 0x33, 1);
   });
 
-  it('浅色压下来足够多，选中的浅色豆子才衬得出来', () => {
-    // 221 色卡里 21 个色号亮度 >= 235（最亮的 H2 是 254.7，基本就是白的）
-    expect(255 - ch(dimHex('FFFFFF'), 0)).toBeGreaterThan(60);
+  it('调淡只压一点点亮度——0.9/0.1 是拉滑杆试出来的，主要靠满色和格内色号立起来', () => {
+    // 之前压得很狠（>60 级），实际拉下来发现太重；现在几乎只留一层影子
+    const drop = 255 - ch(dimHex('FFFFFF'), 0);
+    expect(drop).toBeGreaterThan(0);
+    expect(drop).toBeLessThan(40);
   });
 
   it('亮度顺序保留下来，图形轮廓还看得出', () => {
@@ -193,21 +197,26 @@ describe('drawSheet', () => {
     expect(lastHatch).toBeLessThan(firstCell);
   });
 
-  it('四边都有坐标标尺', () => {
-    const { ctx, lay } = draw(2, 2, Array(4).fill('H15'));
-    const ones = ctx.texts.filter((t) => t.text === '1');
-    // 第 1 列上下各一个、第 1 行左右各一个
-    expect(ones).toHaveLength(4);
-    const xs = ones.map((t) => t.x);
-    expect(Math.min(...xs)).toBeLessThan(lay.ruler);
-    expect(Math.max(...xs)).toBeGreaterThan(lay.ruler + lay.gridW);
+  it('最外一圈逐格标号，最大值落在左上和右下', () => {
+    const { ctx, lay } = draw(6, 8, Array(48).fill('H15'));
+    // 上边降序：最左那格是 cols(8)；下边升序：最右那格是 cols(8)
+    // 左边降序：最上那格是 rows(6)；右边升序：最下那格是 rows(6)
+    const topLeftMost = ctx.texts
+      .filter((t) => t.y < lay.pad && t.x < lay.pad + lay.cell)
+      .map((t) => Number(t.text));
+    expect(topLeftMost).toContain(8);
+
+    const bottomRightMost = ctx.texts
+      .filter((t) => t.y > lay.pad + lay.gridH && t.x > lay.pad + lay.gridW - lay.cell)
+      .map((t) => Number(t.text));
+    expect(bottomRightMost).toContain(8);
   });
 
-  it('列多的时候标尺隔几格标一次，不糊成一片', () => {
+  it('外圈每一格都有号，不像中间那圈标尺隔几格才标一次', () => {
     const { ctx } = draw(1, 100, Array(100).fill(null), []);
     const ticks = ctx.texts.map((t) => Number(t.text)).filter((n) => !Number.isNaN(n));
-    // 100 列每 5 格标一次 = 20 个，上下两条边共 40；行只有 1 行，左右各 1
-    expect(ticks.length).toBeLessThan(100);
+    // 外圈上下各 100 个 + 左右各 1 个，远超「隔 5 格标一次」的量
+    expect(ticks.length).toBeGreaterThanOrEqual(200);
   });
 
   it('底部汇总每项有色块、色号和数量', () => {

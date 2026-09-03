@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Sheet } from '../../api/types';
-import { DIM_A, DIM_V, drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
+import { drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
 import { byCode } from '../../lib/sheetSort';
 import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
 
@@ -28,10 +28,6 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   const { byCode: catalogue } = useEffectiveCatalog();
   /** 选中的色号：只画这些，其余调淡。空 = 全部照常。 */
   const [focus, setFocus] = useState<Set<string>>(new Set());
-  // 调参用的临时滑杆。手感定下来之后，把这两个 state、下面那一段 JSX，以及
-  // drawSheet 的 dim 参数一起删掉，值写回 sheetExport.ts 的 DIM_V / DIM_A。
-  const [dimV, setDimV] = useState(DIM_V);
-  const [dimA, setDimA] = useState(DIM_A);
 
   const drawing = useMemo(
     () => sheetToDrawing(sheet, (code) => catalogue.get(code)?.hex, byCode),
@@ -54,9 +50,8 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
       legend: drawing.legend,
       layout: lay,
       focus,
-      dim: { v: dimV, a: dimA },
     });
-  }, [sheet.rows, sheet.cols, drawing, lay, focus, dimV, dimA]);
+  }, [sheet.rows, sheet.cols, drawing, lay, focus]);
 
   if (!sheet.rows || !sheet.cols) return null;
   return (
@@ -98,67 +93,6 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
           </button>
         )}
       </div>
-
-      {/* 临时调参条。定下来之后整段删掉。 */}
-      <DimTuner v={dimV} a={dimA} onV={setDimV} onA={setDimA} />
     </>
-  );
-}
-
-/**
- * 调淡的两个参数，现调现看。
- *
- * 它们是**反向拉扯**的，所以顺手把落点算出来摆在旁边，不用盯着滑杆猜：
- * 透明度越小整体越淡，但调淡后的区间也越贴近白底，选中的浅色豆子和它的差距
- * 就越小。要更淡又不想丢差距，两条一起往左拉。
- */
-function DimTuner({
-  v,
-  a,
-  onV,
-  onA,
-}: {
-  v: number;
-  a: number;
-  onV: (n: number) => void;
-  onA: (n: number) => void;
-}) {
-  // 221 色卡里最白的 H2，亮度 253。它调淡之后落在哪，和选中时的差距有多大，
-  // 是这两个参数唯一真正要权衡的东西。
-  const land = (lum: number) => Math.round(255 - (255 - lum * v) * a);
-  const palest = land(253);
-
-  return (
-    <div className="dim-tuner">
-      <strong>调淡手感（临时）</strong>
-      <label>
-        变暗 DIM_V
-        <input
-          type="range"
-          min={0.1}
-          max={1}
-          step={0.05}
-          value={v}
-          onChange={(e) => onV(Number(e.target.value))}
-        />
-        <output>{v.toFixed(2)}</output>
-      </label>
-      <label>
-        透明 DIM_A
-        <input
-          type="range"
-          min={0.1}
-          max={1}
-          step={0.05}
-          value={a}
-          onChange={(e) => onA(Number(e.target.value))}
-        />
-        <output>{a.toFixed(2)}</output>
-      </label>
-      <span className="muted">
-        调淡后落在 {land(0)}–{palest}；最白的豆子选中时是 253，和调淡的差{' '}
-        {253 - palest} 级
-      </span>
-    </div>
   );
 }

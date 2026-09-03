@@ -47,6 +47,10 @@ const LEGEND_H = 44;
 export interface Layout {
   cell: number;
   ruler: number;
+  /** 外圈那一格有多宽。和格子同宽，于是外圈的格子和图纸的格子一一对齐。 */
+  ring: number;
+  /** 网格左上角离画布边的距离 = 外圈 + 标尺。 */
+  pad: number;
   width: number;
   height: number;
   gridW: number;
@@ -66,18 +70,23 @@ export function layout(
   const maxWidth = opts.maxWidth ?? DEFAULTS.maxWidth;
   let cell = opts.cell ?? DEFAULTS.cell;
   // 大图纸（104 列）按默认格子会到 3.4k 宽，还能接受；再大就缩格子而不是裁内容
-  if (cols * cell + ruler * 2 > maxWidth) {
-    cell = Math.max(8, Math.floor((maxWidth - ruler * 2) / Math.max(1, cols)));
+  // 外圈占一整格宽，所以总宽是 (cols + 2) 格加上两条标尺
+  if ((cols + 2) * cell + ruler * 2 > maxWidth) {
+    cell = Math.max(8, Math.floor((maxWidth - ruler * 2) / Math.max(1, cols + 2)));
   }
   const gridW = cols * cell;
   const gridH = rows * cell;
-  const width = gridW + ruler * 2;
+  const ring = cell;
+  const pad = ruler + ring;
+  const width = gridW + pad * 2;
   const legendCols = Math.max(1, Math.floor(width / LEGEND_W));
   const legendRows = Math.ceil(legendCount / legendCols);
-  const legendTop = gridH + ruler * 2 + 12;
+  const legendTop = gridH + pad * 2 + 12;
   return {
     cell,
     ruler,
+    ring,
+    pad,
     width,
     height: legendTop + legendRows * LEGEND_H + 12,
     gridW,
@@ -86,6 +95,20 @@ export function layout(
     legendCols,
     legendRows,
   };
+}
+
+/**
+ * 外圈的一格：浅底 + 细框 + 居中的数字。调用前先把字体设好。
+ */
+function ringCell(ctx: CanvasRenderingContext2D, x: number, y: number,
+                  w: number, h: number, text: string): void {
+  ctx.fillStyle = '#f4f5f7';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = '#333';
+  ctx.fillText(text, x + w / 2, y + h / 2);
 }
 
 /** 字印在这个底色上，用黑还是白。和合成渲染器同一条规则。 */
@@ -97,11 +120,6 @@ export function inkOn(hex: string): string {
   return r * 0.299 + g * 0.587 + b * 0.114 > 140 ? '#111' : '#fff';
 }
 
-/**
- * 画整张图。`cells` 按行优先，长度必须是 rows*cols。
- *
- * 只依赖 2D 上下文，不碰 DOM——所以能在测试里对着桩断言画了什么。
- */
 /** 底部汇总里没被选中的那几项画成这个透明度。 */
 const DIM_LEGEND = 0.3;
 
@@ -116,23 +134,20 @@ const DIM_LEGEND = 0.3;
  *   再叠 DIM_A 的透明度     —— 整体退到背景里，深色也跟着被白底提起来，
  *                              不会有一整片黑压在图上
  *
- * 两个数一起决定调淡后的落点：0..255 会被压进 153..204 这一段。选中的浅色豆子
- * （221 色卡里 21 个色号亮度 >= 235，最亮的 H2 是 254.7）比它高出五十级左右，
- * 深色也被提到 153 往上，谁都不会盖过谁。
+ * 这两个值是在界面上拉滑杆试出来的（那两条滑杆调完就删了）。0.9/0.1 的落点是
+ * 229..252：调淡的部分几乎只剩一层影子，选中的色号靠满色 + 格内色号 + 背景斜纹
+ * 三样一起立起来。
  *
- * 这两个数是**反向拉扯**的：DIM_A 越小整体越淡越退得远，但调淡后的区间也跟着
- * 被压扁、离白底更近，浅色豆子和它的差距随之变小。想更淡又不想丢差距，就把
- * DIM_A 调小的同时把 DIM_V 也调小。
- *
- * 要调就调这两个数：DIM_V 往 1 走颜色更亮，DIM_A 往 1 走存在感更强。
+ * 两个数是**反向拉扯**的：DIM_A 越小整体越淡越退得远，但调淡后的区间也跟着被
+ * 压扁、离白底更近。要重新调的话两个一起动。
  */
-export const DIM_V = 0.5;
-export const DIM_A = 0.4;
+const DIM_V = 0.9;
+const DIM_A = 0.1;
 
-export function dimHex(hex: string, factor: number = DIM_V): string {
+export function dimHex(hex: string): string {
   const n = Number.parseInt(hex, 16);
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) =>
-    Math.round(v * factor),
+    Math.round(v * DIM_V),
   );
   return ch.map((v) => v.toString(16).padStart(2, '0')).join('');
 }
@@ -169,6 +184,11 @@ function hatch(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.restore();
 }
 
+/**
+ * 画整张图。`cells` 按行优先，长度必须是 rows*cols。
+ *
+ * 只依赖 2D 上下文，不碰 DOM——所以能在测试里对着桩断言画了什么。
+ */
 export function drawSheet(
   ctx: CanvasRenderingContext2D,
   params: {
@@ -179,22 +199,19 @@ export function drawSheet(
     layout: Layout;
     /** 只突出这些色号，其余的调淡。空集或不给 = 全部照常画。 */
     focus?: Set<string>;
-    /** 调淡的两个参数。不给就用默认值。界面上那两条滑杆用它现调现看。 */
-    dim?: { v: number; a: number };
   },
 ): void {
   const { rows, cols, cells, legend } = params;
   const focus = params.focus?.size ? params.focus : null;
-  const dimV = params.dim?.v ?? DIM_V;
-  const dimA = params.dim?.a ?? DIM_A;
-  const { cell, ruler, width, height, gridW, gridH, legendTop, legendCols } = params.layout;
+  const { cell, ruler, ring, pad, width, height, gridW, gridH, legendTop, legendCols } =
+    params.layout;
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, width, height);
 
   // --- 背景底纹 ---
   // 先铺，格子画在它上面。空格透出它，调淡的格子半透地透出它。
-  hatch(ctx, ruler, ruler, gridW, gridH, Math.max(4, cell / 2));
+  hatch(ctx, pad, pad, gridW, gridH, Math.max(4, cell / 2));
 
   // --- 格子 ---
   ctx.textAlign = 'center';
@@ -204,11 +221,11 @@ export function drawSheet(
     for (let c = 0; c < cols; c += 1) {
       const it = cells[r * cols + c];
       if (!it || !it.code) continue; // 空格留白
-      const x = ruler + c * cell;
-      const y = ruler + r * cell;
+      const x = pad + c * cell;
+      const y = pad + r * cell;
       const dim = focus !== null && !focus.has(it.code);
-      ctx.globalAlpha = dim ? dimA : 1;
-      ctx.fillStyle = `#${dim ? dimHex(it.hex, dimV) : it.hex}`;
+      ctx.globalAlpha = dim ? DIM_A : 1;
+      ctx.fillStyle = `#${dim ? dimHex(it.hex) : it.hex}`;
       ctx.fillRect(x, y, cell, cell);
       ctx.globalAlpha = 1;
       // 调淡的格子**不印色号**。每一格都印着字，满屏灰字比颜色本身更抢眼，
@@ -224,34 +241,34 @@ export function drawSheet(
   ctx.strokeStyle = 'rgba(0,0,0,0.28)';
   ctx.lineWidth = 1;
   for (let c = 0; c <= cols; c += 1) {
-    const x = ruler + c * cell + 0.5;
+    const x = pad + c * cell + 0.5;
     ctx.beginPath();
-    ctx.moveTo(x, ruler);
-    ctx.lineTo(x, ruler + gridH);
+    ctx.moveTo(x, pad);
+    ctx.lineTo(x, pad + gridH);
     ctx.stroke();
   }
   for (let r = 0; r <= rows; r += 1) {
-    const y = ruler + r * cell + 0.5;
+    const y = pad + r * cell + 0.5;
     ctx.beginPath();
-    ctx.moveTo(ruler, y);
-    ctx.lineTo(ruler + gridW, y);
+    ctx.moveTo(pad, y);
+    ctx.lineTo(pad + gridW, y);
     ctx.stroke();
   }
   // 每 10 格加粗一条，照着数的时候不容易串行
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 2;
   for (let c = 0; c <= cols; c += 10) {
-    const x = ruler + c * cell;
+    const x = pad + c * cell;
     ctx.beginPath();
-    ctx.moveTo(x, ruler);
-    ctx.lineTo(x, ruler + gridH);
+    ctx.moveTo(x, pad);
+    ctx.lineTo(x, pad + gridH);
     ctx.stroke();
   }
   for (let r = 0; r <= rows; r += 10) {
-    const y = ruler + r * cell;
+    const y = pad + r * cell;
     ctx.beginPath();
-    ctx.moveTo(ruler, y);
-    ctx.lineTo(ruler + gridW, y);
+    ctx.moveTo(pad, y);
+    ctx.lineTo(pad + gridW, y);
     ctx.stroke();
   }
 
@@ -262,15 +279,35 @@ export function drawSheet(
   const stepR = tickStep(rows);
   for (let c = 0; c < cols; c += 1) {
     if ((c + 1) % stepC) continue;
-    const x = ruler + c * cell + cell / 2;
-    ctx.fillText(String(c + 1), x, ruler / 2);
-    ctx.fillText(String(c + 1), x, ruler + gridH + ruler / 2);
+    const x = pad + c * cell + cell / 2;
+    ctx.fillText(String(c + 1), x, ring + ruler / 2);
+    ctx.fillText(String(c + 1), x, pad + gridH + ruler / 2);
   }
   for (let r = 0; r < rows; r += 1) {
     if ((r + 1) % stepR) continue;
-    const y = ruler + r * cell + cell / 2;
-    ctx.fillText(String(r + 1), ruler / 2, y);
-    ctx.fillText(String(r + 1), ruler + gridW + ruler / 2, y);
+    const y = pad + r * cell + cell / 2;
+    ctx.fillText(String(r + 1), ring + ruler / 2, y);
+    ctx.fillText(String(r + 1), pad + gridW + ruler / 2, y);
+  }
+
+  // --- 最外面那一圈：逐格坐标 ---
+  //
+  // 上降序、下升序、左降序、右升序 —— 于是**最大的数落在左上和右下**这两个对角。
+  // 数格子的时候从哪一边起手都有一个满格基准，不必每次从 1 数到 104。
+  //
+  // 和中间那圈每 5 格一标的标尺是两回事：那个是快速定位用的粗刻度，这一圈是
+  // 每格都有、照着拼时一格一格对的。
+  ctx.font = `${Math.max(6, Math.floor(cell * 0.36))}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  for (let c = 0; c < cols; c += 1) {
+    const x = pad + c * cell;
+    ringCell(ctx, x, pad - ring, cell, ring, String(cols - c)); // 上：降序
+    ringCell(ctx, x, pad + gridH, cell, ring, String(c + 1)); // 下：升序
+  }
+  for (let r = 0; r < rows; r += 1) {
+    const y = pad + r * cell;
+    ringCell(ctx, pad - ring, y, ring, cell, String(rows - r)); // 左：降序
+    ringCell(ctx, pad + gridW, y, ring, cell, String(r + 1)); // 右：升序
   }
 
   // --- 底部色号汇总 ---
