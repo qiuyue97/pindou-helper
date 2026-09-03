@@ -4,10 +4,10 @@
  * canvas 在 jsdom 下画不出东西，所以这里只验证 DOM 状态和交互后传出去的数字；
  * 几何算术本身在 lib/sheetGeometry.test.ts 里已经钉死了。
  */
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { SheetGuess } from '../../api/types';
-import { stubCanvas2D } from '../../test/setup';
+import { type Ctx2DStub, stubCanvas2D } from '../../test/setup';
 import GridConfirm from './GridConfirm';
 
 const GUESS: SheetGuess = {
@@ -22,8 +22,22 @@ const GUESS: SheetGuess = {
   source: 'lattice',
 };
 
+/** jsdom 不会真去加载图片，onload 永远不响。异步触发，和真实情况一致。 */
+function stubImage(fail = false) {
+  class ImageStub {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    set src(_v: string) {
+      setTimeout(() => (fail ? this.onerror?.() : this.onload?.()), 0);
+    }
+  }
+  vi.stubGlobal('Image', ImageStub);
+}
+
+let ctx: Ctx2DStub;
 beforeEach(() => {
-  stubCanvas2D();
+  ctx = stubCanvas2D();
+  stubImage();
 });
 
 function setup(guess: Partial<SheetGuess> = {}) {
@@ -181,4 +195,32 @@ it('小图上命中半径不会大到误抓', () => {
   fireEvent.pointerUp(canvas, { pointerId: 1 });
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
   expect(onConfirm.mock.calls[0]![0].rect).toEqual([40, 40, 340, 260]);
+});
+
+
+// ---------- 底图 ----------
+
+it('原图一到就画上去，不用等用户去拖角点', async () => {
+  // 原来底图存在 ref 里，靠强制重渲染显示；可绘制那个 effect 的依赖是
+  // [rect, rows, cols]，重渲染不会让它重跑——底图于是永远不画，屏幕上只剩一片
+  // 绿网格，点哪都像没反应。
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+});
+
+it('载入中说一声', () => {
+  setup();
+  expect(screen.getByText(/正在载入原图/)).toBeInTheDocument();
+});
+
+it('原图没了就说清楚', async () => {
+  stubImage(true);
+  setup();
+  expect(await screen.findByText(/原图已不存在/)).toBeInTheDocument();
+});
+
+it('画布高度不超过一屏，否则角点和下面的按钮都在屏幕外', () => {
+  setup({ width: 4096, height: 6044 });
+  const canvas = screen.getByLabelText('网格范围');
+  expect(canvas.style.maxWidth).toBe(`calc(70vh * ${4096 / 6044})`);
 });

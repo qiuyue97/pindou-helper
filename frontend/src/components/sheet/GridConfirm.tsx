@@ -43,22 +43,32 @@ export default function GridConfirm({
   busy?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
   const [rect, setRect] = useState<Rect>(guess.rect as Rect);
   const [rows, setRows] = useState(guess.rows);
   const [cols, setCols] = useState(guess.cols);
   const [blanks, setBlanks] = useState(false);
   const [palette, setPalette] = useState<CandidateSet>('221');
   const drag = useRef<Corner | null>(null);
-  const [, force] = useState(0);
 
   // 原图。它同时是这个界面的底图和后面裁格子的素材。
+  //
+  // 放 state 里，不放 ref 里：画布那个 effect 得靠它当依赖。原来是塞进 ref 再
+  // 强制重渲染一次，可 effect 的依赖是 [rect, rows, cols]，重渲染并不会让它重跑
+  // ——于是底图**永远不画**，屏幕上只有一片绿网格，除非用户碰巧拖了一下角点。
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const [gone, setGone] = useState(false);
   useEffect(() => {
+    let alive = true;
     const im = new Image();
-    im.src = `/api/sheets/${guess.id}/image`;
     im.onload = () => {
-      imgRef.current = im;
-      force((n) => n + 1);
+      if (alive) setImg(im);
+    };
+    im.onerror = () => {
+      if (alive) setGone(true);
+    };
+    im.src = `/api/sheets/${guess.id}/image`;
+    return () => {
+      alive = false;
     };
   }, [guess.id]);
 
@@ -67,7 +77,7 @@ export default function GridConfirm({
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (imgRef.current) ctx.drawImage(imgRef.current, 0, 0, canvas.width, canvas.height);
+    if (img) ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
     const [x0, y0, x1, y1] = rect;
     ctx.strokeStyle = '#2ea043';
@@ -100,7 +110,7 @@ export default function GridConfirm({
       ctx.arc(cx, cy, 7, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [rect, rows, cols]);
+  }, [img, rect, rows, cols]);
 
   /** 图像像素 / 屏幕像素。canvas 被 CSS 缩放过，比例要从实际尺寸算。 */
   function scaleOf(el: HTMLCanvasElement): number {
@@ -155,13 +165,26 @@ export default function GridConfirm({
       {guess.source === 'manual' && (
         <p className="muted">没有自动找到网格。请拖动四个角框住豆阵，并填写行数和列数。</p>
       )}
+      {gone && <p className="error">原图已不存在，没法框选。请重新上传。</p>}
+      {!img && !gone && <p className="muted">正在载入原图…</p>}
       <canvas
         ref={canvasRef}
         aria-label="网格范围"
         width={guess.width}
         height={guess.height}
-        // 不加这个，手指一拖就变成滚页面而不是拖角
-        style={{ touchAction: 'none', width: '100%' }}
+        // 不加 touchAction，手指一拖就变成滚页面而不是拖角。
+        //
+        // maxWidth 按图片比例换算出「高度不超过 70vh」的宽度：一张 4096x6044 的
+        // 图按 width:100% 铺开有两千多像素高，四个角点和下面的行数/列数/开始识别
+        // 全在屏幕外，用户看到的就是一整屏网格、点哪都没反应。用 maxWidth 而不是
+        // maxHeight 是为了让缩放保持**等比**——加了 object-fit 会出现留白边，
+        // 指针坐标换算就得跟着算letterbox，没必要。
+        style={{
+          touchAction: 'none',
+          width: '100%',
+          height: 'auto',
+          maxWidth: `calc(70vh * ${guess.width / guess.height})`,
+        }}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
