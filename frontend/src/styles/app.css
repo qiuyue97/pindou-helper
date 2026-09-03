@@ -664,3 +664,29 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   height: 12px;
   border-radius: 2px;
 }
+
+/* 调淡手感的临时调参条。手感定下来之后，这一段和 SheetPreview 里的 DimTuner
+   一起删掉。 */
+.dim-tuner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 10px;
+  padding: 6px 10px;
+  border: 1px dashed rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+.dim-tuner label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.dim-tuner input[type='range'] {
+  width: 160px;
+}
+.dim-tuner output {
+  min-width: 2.6em;
+  font-variant-numeric: tabular-nums;
+}

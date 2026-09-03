@@ -126,13 +126,13 @@ const DIM_LEGEND = 0.3;
  *
  * 要调就调这两个数：DIM_V 往 1 走颜色更亮，DIM_A 往 1 走存在感更强。
  */
-const DIM_V = 0.5;
-const DIM_A = 0.4;
+export const DIM_V = 0.5;
+export const DIM_A = 0.4;
 
-export function dimHex(hex: string): string {
+export function dimHex(hex: string, factor: number = DIM_V): string {
   const n = Number.parseInt(hex, 16);
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) =>
-    Math.round(v * DIM_V),
+    Math.round(v * factor),
   );
   return ch.map((v) => v.toString(16).padStart(2, '0')).join('');
 }
@@ -179,10 +179,14 @@ export function drawSheet(
     layout: Layout;
     /** 只突出这些色号，其余的调淡。空集或不给 = 全部照常画。 */
     focus?: Set<string>;
+    /** 调淡的两个参数。不给就用默认值。界面上那两条滑杆用它现调现看。 */
+    dim?: { v: number; a: number };
   },
 ): void {
   const { rows, cols, cells, legend } = params;
   const focus = params.focus?.size ? params.focus : null;
+  const dimV = params.dim?.v ?? DIM_V;
+  const dimA = params.dim?.a ?? DIM_A;
   const { cell, ruler, width, height, gridW, gridH, legendTop, legendCols } = params.layout;
 
   ctx.fillStyle = '#fff';
@@ -203,8 +207,8 @@ export function drawSheet(
       const x = ruler + c * cell;
       const y = ruler + r * cell;
       const dim = focus !== null && !focus.has(it.code);
-      ctx.globalAlpha = dim ? DIM_A : 1;
-      ctx.fillStyle = `#${dim ? dimHex(it.hex) : it.hex}`;
+      ctx.globalAlpha = dim ? dimA : 1;
+      ctx.fillStyle = `#${dim ? dimHex(it.hex, dimV) : it.hex}`;
       ctx.fillRect(x, y, cell, cell);
       ctx.globalAlpha = 1;
       // 调淡的格子**不印色号**。每一格都印着字，满屏灰字比颜色本身更抢眼，
