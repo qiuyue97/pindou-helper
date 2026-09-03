@@ -103,7 +103,39 @@ export function inkOn(hex: string): string {
  * 只依赖 2D 上下文，不碰 DOM——所以能在测试里对着桩断言画了什么。
  */
 /** 没被选中的色号画成这个透明度。留一点而不是全隐，是为了还能看出图形轮廓。 */
-const DIM = 0.12;
+const DIM = 0.18;
+
+/** 背景斜纹的颜色和粗细。要淡到不抢戏，又要在纯白上看得出来。 */
+const HATCH = 'rgba(0,0,0,0.07)';
+
+/**
+ * 给一块区域铺上背景斜纹。
+ *
+ * 解决的是一个很具体的问题：白底上，**空格**、**被调淡的格子**、**本来就接近
+ * 白色的豆子**三者长得一模一样。突出显示某个浅色色号时，它整个溶在背景里。
+ *
+ * 铺一层斜纹当底，格子画在它上面：不透明的格子把斜纹盖掉，空格直接透出斜纹，
+ * 调淡的格子半透地透出斜纹。于是「背景」永远带纹理，**被选中的色号是画面上
+ * 唯一平整实心的东西**——哪怕它自己就是米白，也一眼认得出来。
+ *
+ * 斜纹间距跟着格子走（半格一条），缩略图和导出的大图看起来是同一种质感。
+ */
+function hatch(ctx: CanvasRenderingContext2D, x: number, y: number,
+               w: number, h: number, step: number): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  ctx.strokeStyle = HATCH;
+  ctx.lineWidth = 1;
+  for (let d = -h; d < w; d += step) {
+    ctx.beginPath();
+    ctx.moveTo(x + d, y);
+    ctx.lineTo(x + d + h, y + h);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
 
 export function drawSheet(
   ctx: CanvasRenderingContext2D,
@@ -123,6 +155,10 @@ export function drawSheet(
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, width, height);
+
+  // --- 背景底纹 ---
+  // 先铺，格子画在它上面。空格透出它，调淡的格子半透地透出它。
+  hatch(ctx, ruler, ruler, gridW, gridH, Math.max(4, cell / 2));
 
   // --- 格子 ---
   ctx.textAlign = 'center';

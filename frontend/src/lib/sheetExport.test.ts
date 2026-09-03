@@ -20,13 +20,20 @@ function cells(codes: (string | null)[]): ExportCell[] {
 function ctxStub() {
   const texts: Array<{ text: string; x: number; y: number }> = [];
   const fills: string[] = [];
+  /** 每次 stroke 时的画笔颜色。用来把背景斜纹和网格线分开数。 */
+  const strokes: string[] = [];
   const ctx = {
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
-    stroke: vi.fn(),
+    stroke: vi.fn(() => strokes.push(String(ctx.strokeStyle))),
+    // 背景斜纹要把自己裁在网格区域内
+    save: vi.fn(),
+    restore: vi.fn(),
+    clip: vi.fn(),
+    rect: vi.fn(),
     fillText: vi.fn((text: string, x: number, y: number) => texts.push({ text, x, y })),
     font: '',
     textAlign: '',
@@ -35,9 +42,11 @@ function ctxStub() {
     lineWidth: 0,
     texts,
     fills,
+    strokes,
   } as unknown as CanvasRenderingContext2D & {
     texts: typeof texts;
     fills: string[];
+    strokes: string[];
   };
   Object.defineProperty(ctx, 'fillStyle', {
     get: () => fills[fills.length - 1] ?? '',
@@ -123,8 +132,28 @@ describe('drawSheet', () => {
 
   it('画出完整的网格线', () => {
     const { ctx } = draw(3, 4, Array(12).fill('H15'));
-    // 竖线 cols+1、横线 rows+1，再加每 10 格的加粗线（这里各 1 条）
-    expect(ctx.beginPath).toHaveBeenCalledTimes(4 + 1 + 3 + 1 + 1 + 1);
+    // 竖线 cols+1、横线 rows+1，再加每 10 格的加粗线（这里各 1 条）。
+    // 背景斜纹也在 stroke，按画笔颜色把它排除掉。
+    const grid = ctx.strokes.filter((c) => !c.startsWith('rgba(0,0,0,0.0'));
+    expect(grid).toHaveLength(4 + 1 + 3 + 1 + 1 + 1);
+  });
+
+  it('先铺背景斜纹，格子画在它上面', () => {
+    // 白底上空格、调淡的格子、本来就接近白的豆子长得一模一样。斜纹给背景一点
+    // 质感，被选中的色号于是成了画面上唯一平整实心的东西。
+    const { ctx } = draw(3, 4, Array(12).fill('H15'));
+    expect(ctx.clip).toHaveBeenCalled();
+    const hatched = ctx.strokes.filter((c) => c.startsWith('rgba(0,0,0,0.0'));
+    expect(hatched.length).toBeGreaterThan(0);
+    // 斜纹全部画在格子之前
+    const lastHatch = Math.max(
+      ...(ctx.stroke as unknown as { mock: { invocationCallOrder: number[] } }).mock
+        .invocationCallOrder.slice(0, hatched.length),
+    );
+    const firstCell = (
+      ctx.fillRect as unknown as { mock: { invocationCallOrder: number[] } }
+    ).mock.invocationCallOrder[1]!;
+    expect(lastHatch).toBeLessThan(firstCell);
   });
 
   it('四边都有坐标标尺', () => {

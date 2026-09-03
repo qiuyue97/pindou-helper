@@ -28,6 +28,7 @@ export interface Ctx2DStub extends Record<string, unknown> {
   fillText: ReturnType<typeof vi.fn>;
   stroke: ReturnType<typeof vi.fn>;
   fillStyleLog: string[];
+  strokeStyleLog: string[];
   alphaLog: number[];
 }
 
@@ -38,6 +39,7 @@ if (typeof HTMLCanvasElement !== 'undefined' && !HTMLCanvasElement.prototype.get
 /** 给一个 canvas 装上记账用的 2D 上下文，返回它好做断言。 */
 export function stubCanvas2D(): Ctx2DStub {
   const fillStyleLog: string[] = [];
+  const strokeStyleLog: string[] = [];
   const alphaLog: number[] = [];
   const ctx = {
     fillRect: vi.fn(),
@@ -56,17 +58,25 @@ export function stubCanvas2D(): Ctx2DStub {
     measureText: vi.fn(() => ({ width: 0 })),
     save: vi.fn(),
     restore: vi.fn(),
+    clip: vi.fn(),
+    rect: vi.fn(),
     setTransform: vi.fn(),
     translate: vi.fn(),
     scale: vi.fn(),
     fillStyleLog,
+    strokeStyleLog,
     alphaLog,
-    strokeStyle: '',
     lineWidth: 0,
     font: '',
     textAlign: 'left',
     textBaseline: 'alphabetic',
   } as unknown as Ctx2DStub;
+  Object.defineProperty(ctx, 'strokeStyle', {
+    get: () => strokeStyleLog[strokeStyleLog.length - 1] ?? '',
+    set: (v: string) => {
+      strokeStyleLog.push(v);
+    },
+  });
   Object.defineProperty(ctx, 'globalAlpha', {
     get: () => alphaLog[alphaLog.length - 1] ?? 1,
     set: (v: number) => {
