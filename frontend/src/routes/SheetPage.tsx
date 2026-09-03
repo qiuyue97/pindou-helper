@@ -59,11 +59,11 @@ export default function SheetPage() {
     }
   }
 
-  async function start(g: Geometry) {
-    if (!guess) return;
+  async function start(sheetId: number, g: Geometry) {
     try {
-      await apiSend('POST', `/api/sheets/${guess.id}/recognise`, g);
-      navigate(`/sheet/${guess.id}`);
+      await apiSend('POST', `/api/sheets/${sheetId}/recognise`, g);
+      queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+      navigate(`/sheet/${sheetId}`);
     } catch (e) {
       show(e instanceof Error ? e.message : '无法开始识别');
     }
@@ -89,7 +89,29 @@ export default function SheetPage() {
         </>
       )}
 
-      {id === null && guess && <GridConfirm guess={guess} onConfirm={start} />}
+      {id === null && guess && (
+        <GridConfirm guess={guess} onConfirm={(g) => void start(guess.id, g)} />
+      )}
+
+      {/* 传完图没确认就切走的，回来还得能接着确认。这一状态原来没有任何分支，
+          从「最近的图纸」点进一张「等待确认网格」的，页面整个是白的。 */}
+      {sheet?.status === 'ready' && (
+        <GridConfirm
+          guess={{
+            id: sheet.id,
+            width: sheet.width,
+            height: sheet.height,
+            rect: sheet.rect,
+            rows: sheet.rows,
+            cols: sheet.cols,
+            snap_x: sheet.snap_x,
+            snap_y: sheet.snap_y,
+            // 检测失败时存下来的行列数就是 0，和刚上传时是同一回事
+            source: sheet.rows > 0 && sheet.cols > 0 ? 'lattice' : 'manual',
+          }}
+          onConfirm={(g) => void start(sheet.id, g)}
+        />
+      )}
 
       {sheet && (sheet.status === 'pending' || sheet.status === 'running') && (
         <p>正在识别，这可能要一两分钟。可以先去做别的，回来结果还在。</p>

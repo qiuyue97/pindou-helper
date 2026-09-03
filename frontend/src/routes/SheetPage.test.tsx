@@ -11,7 +11,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { Sheet } from '../api/types';
 import { ToastProvider } from '../state/ToastContext';
 import { type Ctx2DStub, stubCanvas2D } from '../test/setup';
-import { mockFetch } from '../test/utils';
+import { lastRequest, mockFetch } from '../test/utils';
 import SheetPage from './SheetPage';
 
 let vip = true;
@@ -289,4 +289,24 @@ it('上方那张图纸也跟着改，和下载的是同一张', async () => {
   await waitFor(() =>
     expect(ctx.fillText.mock.calls.map((c) => String(c[0]))).toContain('B8'),
   );
+});
+
+// ---------- 等待确认网格 ----------
+
+it('传完图没确认就切走的，点回来还能接着确认', async () => {
+  // 这一状态原来没有任何分支，页面整个是白的
+  mockFetch({ 'GET /api/sheets/1': { body: sheet({ status: 'ready' }) } });
+  show(1);
+  expect(await screen.findByLabelText('网格范围')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '开始识别' })).toBeEnabled();
+});
+
+it('接着确认时把几何发到这张图纸上', async () => {
+  mockFetch({
+    'GET /api/sheets/1': { body: sheet({ status: 'ready' }) },
+    'POST /api/sheets/1/recognise': { body: {} },
+  });
+  show(1);
+  fireEvent.click(await screen.findByRole('button', { name: '开始识别' }));
+  await waitFor(() => expect(lastRequest('POST', '/api/sheets/1/recognise')).toBeTruthy());
 });

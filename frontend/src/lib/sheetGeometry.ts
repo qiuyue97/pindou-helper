@@ -132,3 +132,25 @@ export function zoomAt(v: View, px: number, py: number, factor: number,
   const k = scale / v.scale;
   return { scale, ox: px - (px - v.ox) * k, oy: py - (py - v.oy) * k };
 }
+
+/**
+ * 按已知格距，把框的边长换算成格数。
+ *
+ * 格距取自检测结果本身（框的边长 / 检测出的行列数）。横竖线的检测是准的——
+ * 一张 3492px 的图量出来格距 52.00，整整齐齐——所以框一动，格数就该跟着动，
+ * 而不是继续用检测那一刻的数：框缩了一圈行列数却没变，切出来的每一格都是歪的。
+ *
+ * 检测失败时没有格距（pitch <= 0），返回 0 表示「算不出来」，由用户自己填。
+ */
+export function gridCount(span: number, pitch: number): number {
+  if (!(pitch > 0) || !(span > 0)) return 0;
+  return Math.max(1, Math.round(span / pitch));
+}
+
+/** 从检测结果反推格距。检测失败（rows/cols 为 0）时给 0。 */
+export function pitchOf(rect: Rect, rows: number, cols: number): [number, number] {
+  return [
+    cols > 0 ? (rect[2] - rect[0]) / cols : 0,
+    rows > 0 ? (rect[3] - rect[1]) / rows : 0,
+  ];
+}

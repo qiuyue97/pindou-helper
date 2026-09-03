@@ -9,10 +9,12 @@ import {
   cellRect,
   corners,
   fitView,
+  gridCount,
   HIT_MOUSE,
   HIT_TOUCH,
   hitCorner,
   moveCorner,
+  pitchOf,
   snap,
   toImage,
   toScreen,
@@ -166,5 +168,40 @@ describe('zoomAt', () => {
     const v = { scale: 5, ox: 0, oy: 0 };
     expect(zoomAt(v, 0, 0, 10, 0.5, 8).scale).toBe(8);
     expect(zoomAt(v, 0, 0, 0.001, 0.5, 8).scale).toBe(0.5);
+  });
+});
+
+// ---------- 行列数跟着框走 ----------
+
+describe('pitchOf', () => {
+  it('从检测结果反推格距', () => {
+    // 真实数据：3492x3791 的图，框 -22..3514，68x68 -> 格距正好 52
+    expect(pitchOf([-22, -22, 3514, 3514], 68, 68)).toEqual([52, 52]);
+  });
+
+  it('检测失败时没有格距', () => {
+    expect(pitchOf([0, 0, 100, 100], 0, 0)).toEqual([0, 0]);
+  });
+});
+
+describe('gridCount', () => {
+  it('按格距四舍五入出格数', () => {
+    expect(gridCount(52 * 68, 52)).toBe(68);
+    // 框往里缩了两格
+    expect(gridCount(52 * 66, 52)).toBe(66);
+  });
+
+  it('框没对齐时就近取整', () => {
+    expect(gridCount(52 * 66 + 20, 52)).toBe(66);
+    expect(gridCount(52 * 66 + 40, 52)).toBe(67);
+  });
+
+  it('至少一格', () => {
+    expect(gridCount(3, 52)).toBe(1);
+  });
+
+  it('算不出来就说算不出来，不瞎猜', () => {
+    expect(gridCount(500, 0)).toBe(0);
+    expect(gridCount(0, 52)).toBe(0);
   });
 });

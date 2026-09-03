@@ -12,8 +12,10 @@ import {
   type View,
   corners,
   fitView,
+  gridCount,
   hitCorner,
   moveCorner,
+  pitchOf,
   snap,
   toImage,
   toScreen,
@@ -79,6 +81,12 @@ export default function GridConfirm({
   /** 整张图刚好放下时的倍率。缩放上下限都相对它，用户永远缩不到比「适应」更小。 */
   const base = fitView(guess.width, guess.height, box.w, box.h).scale;
 
+  // 格距取自检测结果，之后不再变：检测出的横竖线是准的（实测一张 3492px 宽的图
+  // 格距 52.00），变的只是用户框了多大一块。框一动行列数就跟着算，否则框缩了一圈
+  // 行列数却停在原地，切出来每一格都是歪的。
+  const [pitchX, pitchY] = pitchOf(guess.rect as Rect, guess.rows, guess.cols);
+  const auto = pitchX > 0 && pitchY > 0;
+
   const fit = useCallback(() => {
     setView(fitView(guess.width, guess.height, box.w, box.h));
   }, [guess.width, guess.height, box.w, box.h]);
@@ -117,6 +125,14 @@ export default function GridConfirm({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  // 框一变就按格距重算行列数。检测失败时没有格距，行列数完全交给用户填，
+  // 这里不去猜。用户手填过的数字也不会被这里冲掉——只有框变了才重算。
+  useEffect(() => {
+    if (!auto) return;
+    setCols(gridCount(rect[2] - rect[0], pitchX));
+    setRows(gridCount(rect[3] - rect[1], pitchY));
+  }, [rect, auto, pitchX, pitchY]);
 
   // 图一到、取景框一有尺寸就适应一次。之后是用户自己缩放平移，不再自动动它。
   const fitted = useRef(false);
@@ -319,7 +335,10 @@ export default function GridConfirm({
         <button type="button" onClick={fit}>
           适应
         </button>
-        <span className="muted">拖角点对准豆阵；空白处拖动可平移，滚轮或双指捏合缩放</span>
+        <span className="muted">
+          拖角点对准豆阵；空白处拖动可平移，滚轮或双指捏合缩放
+          {auto && '。行列数按检测出的格距自动跟着算，也可以自己改'}
+        </span>
       </div>
 
       <div className="grid-confirm-controls">

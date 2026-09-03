@@ -356,3 +356,44 @@ it('框可以拖到图片外面去', async () => {
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
   expect(onConfirm.mock.calls[0]![0].rect.slice(0, 2)).toEqual([-15, -15]);
 });
+
+// ---------- 行列数跟着角点走 ----------
+
+it('拖角点时行列数按格距自动重算', async () => {
+  // 400x300 的图，框 40..340 / 40..260，30 列 22 行 -> 格距正好 10
+  const onConfirm = setup({ snap_x: [], snap_y: [] });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  // 左上角往里挪三格（30px）
+  fireEvent.pointerDown(canvas, { clientX: 40, clientY: 40, pointerId: 1 });
+  fireEvent.pointerMove(canvas, { clientX: 70, clientY: 70, pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+  expect(screen.getByLabelText('列数')).toHaveValue(27);
+  expect(screen.getByLabelText('行数')).toHaveValue(19);
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0]).toMatchObject({ rows: 19, cols: 27 });
+});
+
+it('检测失败时不替用户猜行列数', async () => {
+  setup({ source: 'manual', rows: 0, cols: 0, snap_x: [], snap_y: [] });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  fireEvent.pointerDown(canvas, { clientX: 0, clientY: 0, pointerId: 1 });
+  fireEvent.pointerMove(canvas, { clientX: 30, clientY: 30, pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+  expect(screen.getByLabelText('行数')).toHaveValue(0);
+  expect(screen.getByLabelText('列数')).toHaveValue(0);
+});
+
+it('手填的行列数不会被冲掉——只有框动了才重算', async () => {
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  fireEvent.change(screen.getByLabelText('行数'), { target: { value: '49' } });
+  expect(screen.getByLabelText('行数')).toHaveValue(49);
+});
