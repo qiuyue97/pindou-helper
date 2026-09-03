@@ -33,3 +33,21 @@ describe('App auth gate', () => {
     expect(await screen.findByText('amy')).toBeInTheDocument();
   });
 });
+
+describe('导航', () => {
+  test('「图纸识别」插在「配色」和「我的色卡」之间', async () => {
+    mockFetch({
+      'GET /api/auth/me': { body: { username: 'amy', threshold: 500 } },
+      'GET /api/colors': { body: [] },
+      'GET /api/inventory': { body: [] },
+      'GET /api/operations': { body: [] },
+      'GET /api/inventory/stockout': { body: { rows: [] } },
+    });
+    setup();
+    await screen.findByRole('link', { name: /图纸识别/ });
+    const labels = screen.getAllByRole('link').map((a) => a.textContent?.trim());
+    const i = labels.indexOf('配色');
+    expect(labels[i + 1]).toBe('图纸识别');
+    expect(labels[i + 2]).toBe('我的色卡');
+  });
+});

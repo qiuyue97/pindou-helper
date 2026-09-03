@@ -315,3 +315,151 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .point-label { position: absolute; pointer-events: none; background: #24241f; color: #fff; font-size: 0.72rem; padding: 1px 5px; border-radius: 3px; white-space: nowrap; z-index: 2; }
 .space2d-controls, .space3d-controls { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; font-size: 0.85rem; }
 .space2d-controls button, .space3d-controls button, .sampler-controls button { padding: 0.28rem 0.6rem; font-size: 0.85rem; }
+
+/* ---------------------------------------------------------- 图纸识别（VIP） */
+
+/* 四个告警级别的行/卡片底色。和后端 decide.py 的 LEVELS 一一对应：
+   绿=没什么可看的，橙=颜色存疑，紫=与图例数量不符，红=没读出来按颜色猜的。 */
+.level-ok {
+  --lv: transparent;
+}
+.level-warn {
+  --lv: rgba(245, 150, 20, 0.16);
+}
+.level-count {
+  --lv: rgba(170, 60, 200, 0.16);
+}
+.level-guess {
+  --lv: rgba(215, 45, 45, 0.16);
+}
+.reconcile-table tbody tr,
+.cell-card {
+  background: var(--lv);
+}
+
+.sheet-page > * + * {
+  margin-top: 16px;
+}
+.sheet-notices {
+  margin: 0;
+  padding-left: 20px;
+  color: #8a6d3b;
+}
+.sheet-notices li + li {
+  margin-top: 4px;
+}
+
+.grid-confirm-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+}
+.grid-confirm-controls input[type='number'] {
+  width: 5em;
+  margin-left: 6px;
+}
+
+.reconcile-table .why {
+  margin-left: 4px;
+  cursor: help;
+}
+.reconcile-table input[type='number'] {
+  width: 5em;
+}
+
+.cell-card > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.cell-card .why {
+  color: #8a6d3b;
+  font-size: 0.85em;
+}
+
+/* 勾选层压在 canvas 上，格子和瓦片一一对齐。canvas 画像素，这一层负责可访问性
+   和点击——两者的网格必须同参数（12 列 x 44px）。 */
+.cell-grid-wrap {
+  position: relative;
+}
+.cell-hits {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 0;
+  pointer-events: none;
+}
+.cell-hits .cell-hit {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+.cell-hit.edited {
+  outline: 2px solid #2ea043;
+  outline-offset: -2px;
+}
+
+/* 手指的命中面积。桌面上看不出差别，触摸上是能不能用的差别。 */
+.cell-hit input[type='checkbox'] {
+  width: 100%;
+  height: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+  opacity: 0.35;
+}
+.cell-hit input[type='checkbox']:checked {
+  opacity: 1;
+}
+
+.cell-pager,
+.cell-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.code-picker {
+  position: relative;
+  min-width: 8em;
+}
+.code-picker-list {
+  max-height: 240px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.code-picker-list button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  /* iOS 上的可点面积 */
+  min-height: 44px;
+}
+.swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  vertical-align: middle;
+}
+
+@media (max-width: 640px) {
+  /* 表格在窄屏上横向滚动，不要把整页撑破 */
+  .reconcile-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
