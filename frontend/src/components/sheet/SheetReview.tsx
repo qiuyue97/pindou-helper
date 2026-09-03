@@ -204,33 +204,53 @@ function CellPane({
     return [...own].sort((a, b) => a - b);
   }, [sheet.classes, sheet.overrides, row.code, cols]);
 
-  const pageCells = cells.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
+  const pageCells = useMemo(
+    () => cells.slice(page * PER_PAGE, (page + 1) * PER_PAGE),
+    [cells, page],
+  );
   const pageCount = Math.max(1, Math.ceil(cells.length / PER_PAGE));
   const gridRows = Math.max(1, Math.ceil(pageCells.length / PER_ROW));
+
+  // 原图**只加载一次**，之后每格都是从它上面 drawImage 裁出来的一小块。
+  //
+  // 之前是在绘制的 effect 里现 new 一个 Image：那个 effect 的依赖里有每次渲染都
+  // 新建的数组（cells.slice 的结果），于是每渲染一次就重跑一次——同步 clearRect、
+  // 异步等图。原图有好几 MB，加载窗口很长，期间任何一次重渲染都会把刚画好的内容
+  // 清掉，结果就是画布**一直是空白的**。
+  const [img, setImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const im = new Image();
+    im.onload = () => {
+      if (alive) setImg(im);
+    };
+    im.src = `/api/sheets/${sheet.id}/image`;
+    return () => {
+      alive = false;
+    };
+  }, [sheet.id]);
 
   useEffect(() => {
     const canvas = ref.current;
     const ctx = canvas?.getContext('2d');
     if (!canvas || !ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const im = new Image();
-    im.src = `/api/sheets/${sheet.id}/image`;
-    im.onload = () => {
-      pageCells.forEach((flat, n) => {
-        const { sx, sy, sw, sh } = cellRect(
-          sheet.rect as Rect,
-          sheet.rows,
-          sheet.cols,
-          Math.floor(flat / cols),
-          flat % cols,
-        );
-        ctx.drawImage(
-          im, sx, sy, sw, sh,
-          (n % PER_ROW) * TILE, Math.floor(n / PER_ROW) * TILE, TILE, TILE,
-        );
-      });
-    };
-  }, [sheet.id, sheet.rect, sheet.rows, sheet.cols, cols, pageCells]);
+    if (!img) return;
+    // 图已经在手上了，同步画完——不再有「清了之后等异步」的窗口
+    pageCells.forEach((flat, n) => {
+      const { sx, sy, sw, sh } = cellRect(
+        sheet.rect as Rect,
+        sheet.rows,
+        sheet.cols,
+        Math.floor(flat / cols),
+        flat % cols,
+      );
+      ctx.drawImage(
+        img, sx, sy, sw, sh,
+        (n % PER_ROW) * TILE, Math.floor(n / PER_ROW) * TILE, TILE, TILE,
+      );
+    });
+  }, [img, pageCells, sheet.rect, sheet.rows, sheet.cols, cols, gridRows]);
 
   const list = [...picked].sort((a, b) => a - b);
 

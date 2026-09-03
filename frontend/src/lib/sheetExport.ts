@@ -207,3 +207,42 @@ export function drawSheet(
     ctx.fillText(`${e.count} 颗`, x + 38, y + 26);
   });
 }
+
+/**
+ * 把一张校对过的图纸转成绘制参数。
+ *
+ * 预览和下载**共用这一个转换**：屏幕上看到的和下载下来的必须是同一张图，否则
+ * 用户照着屏幕拼、拿到的文件却是另一回事。
+ *
+ * 用的是校对之后的归属（labels + classes + overrides），不是识别的原始输出。
+ */
+export function sheetToDrawing(
+  sheet: {
+    rows: number;
+    cols: number;
+    labels: number[];
+    classes: Array<{ klass: number; code: string }>;
+    overrides: Record<string, string>;
+    tally: Record<string, number>;
+  },
+  hexOf: (code: string) => string | undefined,
+  sortCodes: (a: string, b: string) => number,
+): { cells: ExportCell[]; legend: LegendEntry[] } {
+  const codeOf = new Map(sheet.classes.map((c) => [c.klass, c.code]));
+  const cells: ExportCell[] = [];
+  for (let r = 0; r < sheet.rows; r += 1) {
+    for (let c = 0; c < sheet.cols; c += 1) {
+      const over = sheet.overrides[`${r},${c}`];
+      const k = sheet.labels[r * sheet.cols + c];
+      const code = over ?? (k !== undefined && k >= 0 ? codeOf.get(k) : undefined);
+      cells.push({
+        code: code ?? '',
+        hex: code ? (hexOf(code) ?? 'CCCCCC') : 'CCCCCC',
+      });
+    }
+  }
+  const legend: LegendEntry[] = Object.keys(sheet.tally)
+    .sort(sortCodes)
+    .map((code) => ({ code, hex: hexOf(code) ?? 'CCCCCC', count: sheet.tally[code]! }));
+  return { cells, legend };
+}

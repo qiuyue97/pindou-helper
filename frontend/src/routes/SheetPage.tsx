@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiSend } from '../api/client';
@@ -5,8 +6,8 @@ import { useSheet, useSheets } from '../api/hooks';
 import type { Sheet, SheetGuess } from '../api/types';
 import BatchDialog from '../components/BatchDialog';
 import GridConfirm, { type Geometry } from '../components/sheet/GridConfirm';
-import SheetCanvas from '../components/sheet/SheetCanvas';
 import SheetExport from '../components/sheet/SheetExport';
+import SheetPreview from '../components/sheet/SheetPreview';
 import SheetReview from '../components/sheet/SheetReview';
 import SheetUpload from '../components/sheet/SheetUpload';
 import { byCode } from '../lib/sheetSort';
@@ -29,6 +30,7 @@ export default function SheetPage() {
   const { isVip } = useVip();
   const { show } = useToast();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { sheetId } = useParams();
   const id = sheetId ? Number(sheetId) : null;
 
@@ -48,7 +50,10 @@ export default function SheetPage() {
 
   async function patch(path: string, body: unknown) {
     try {
-      await apiSend('PATCH', `/api/sheets/${id}${path}`, body);
+      // 把返回的整张图纸写回缓存。接口返回的就是改完之后的完整状态（含重算过的
+      // 对账和 tally），丢掉它就等于改了不刷新——用户改完看不到任何变化。
+      const next = await apiSend<Sheet>('PATCH', `/api/sheets/${id}${path}`, body);
+      queryClient.setQueryData(['sheet', id], next);
     } catch (e) {
       show(e instanceof Error ? e.message : '修改失败');
     }
@@ -96,7 +101,7 @@ export default function SheetPage() {
         <>
           <Notices sheet={sheet} />
           {/* 完整图纸在最上面：用户先看整体，再往下看细节 */}
-          <SheetCanvas sheet={sheet} />
+          <SheetPreview sheet={sheet} />
           <div className="sheet-actions">
             <button type="button" onClick={() => setDeducting(true)}>
               把这份清单送去按图扣减

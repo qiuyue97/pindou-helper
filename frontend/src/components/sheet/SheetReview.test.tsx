@@ -6,10 +6,10 @@
  *   左边改数量 -> 只改「图纸说有多少」，不动任何豆点
  *   右边改豆点 -> 那几个移出当前色号，进入目标色号
  */
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { CountRow, Sheet, SheetClass } from '../../api/types';
-import { stubCanvas2D } from '../../test/setup';
+import { type Ctx2DStub, stubCanvas2D } from '../../test/setup';
 import SheetReview from './SheetReview';
 
 vi.mock('../../state/useEffectiveCatalog', () => ({
@@ -69,8 +69,30 @@ function setup(sheet: Sheet = makeSheet()) {
   return { onPatchClasses, onPatchPrior, onPatchCells };
 }
 
+/**
+ * jsdom 不会真的去加载图片，`onload` 永远不响。这里让它**下一个 tick** 才响——
+ * 必须是异步的：真实浏览器里原图有好几 MB，加载窗口很长，画布空白那个 bug 就
+ * 藏在这个窗口里。同步触发的桩会把 bug 一起藏掉。
+ */
+function stubImage() {
+  class ImageStub {
+    onload: (() => void) | null = null;
+    #src = '';
+    get src() {
+      return this.#src;
+    }
+    set src(v: string) {
+      this.#src = v;
+      setTimeout(() => this.onload?.(), 0);
+    }
+  }
+  vi.stubGlobal('Image', ImageStub);
+}
+
+let ctx: Ctx2DStub;
 beforeEach(() => {
-  stubCanvas2D();
+  ctx = stubCanvas2D();
+  stubImage();
 });
 
 // ---------- 左栏 ----------
@@ -257,4 +279,57 @@ it('一页 50 个，多了分页', () => {
 it('没选豆点时提示去左栏改整类', () => {
   setup();
   expect(screen.getByText(/改整个色号请用左边那一栏/)).toBeInTheDocument();
+});
+
+
+// ---------- 画布 ----------
+
+it('原图只加载一次，不是每渲染一次就重新加载一次', async () => {
+  const srcs: string[] = [];
+  class Counting {
+    onload: (() => void) | null = null;
+    set src(v: string) {
+      srcs.push(v);
+      setTimeout(() => this.onload?.(), 0);
+    }
+  }
+  vi.stubGlobal('Image', Counting);
+
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  const before = srcs.length;
+
+  // 勾一个格子 = 一次重渲染
+  fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+  expect(srcs.length).toBe(before);
+});
+
+it('重新渲染之后画布上还有东西——不会清了就空在那儿', async () => {
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+
+  // 每次重画都是「先 clearRect，再逐格 drawImage」。要是最后一次 clearRect 之后
+  // 再没有 drawImage，用户看到的就是一块空白——这正是之前那个 bug：effect 依赖里
+  // 有每次渲染都新建的数组，于是每渲染一次就清一次画布，然后去等一张还没到的图。
+  const lastClear = Math.max(...ctx.clearRect.mock.invocationCallOrder);
+  const lastDraw = Math.max(...ctx.drawImage.mock.invocationCallOrder);
+  expect(lastDraw).toBeGreaterThan(lastClear);
+});
+
+it('翻页会重画', async () => {
+  const many = Array.from({ length: 120 }, (_, i) => i);
+  setup(
+    makeSheet({
+      classes: [cls({ klass: 0, code: 'H15', n: 120, cells: many })],
+      counts: [row({ code: 'H15', sheet: 120, prior: 120, classes: [0] })],
+      prior: { H15: 120 },
+    }),
+  );
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  const before = ctx.drawImage.mock.calls.length;
+
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }));
+  expect(ctx.drawImage.mock.calls.length).toBeGreaterThan(before);
 });

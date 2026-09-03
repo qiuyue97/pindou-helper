@@ -4,13 +4,13 @@
  * 识别不出来**不是失败**：MinerU 挂了、没配 token、这张图没有颜色结构，产出的都是
  * 一张全红的矩阵，用户可以从零改。界面要如实说明发生了什么，而不是报错了事。
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Sheet } from '../api/types';
 import { ToastProvider } from '../state/ToastContext';
-import { stubCanvas2D } from '../test/setup';
+import { type Ctx2DStub, stubCanvas2D } from '../test/setup';
 import { mockFetch } from '../test/utils';
 import SheetPage from './SheetPage';
 
@@ -92,9 +92,10 @@ function show(sheetId?: number) {
   );
 }
 
+let ctx: Ctx2DStub;
 beforeEach(() => {
   vip = true;
-  stubCanvas2D();
+  ctx = stubCanvas2D();
 });
 
 it('普通账号看得见入口，点了给升级提示', () => {
@@ -232,4 +233,60 @@ it('完成后可以下载图纸', async () => {
   mockFetch({ 'GET /api/sheets/1': { body: sheet() } });
   show(1);
   expect(await screen.findByRole('button', { name: '下载图纸' })).toBeEnabled();
+});
+
+
+// ---------- 改完要立刻看得见 ----------
+
+/**
+ * PATCH 返回的是**改完之后的完整图纸**（含重算过的对账和 tally）。把它写回查询缓存，
+ * 界面就跟着刷新了。丢掉它的话，用户改完什么变化都看不到——识别完成后轮询已经停了，
+ * 不会再有任何一次 GET 来救场。
+ */
+it('改完之后界面按 PATCH 的返回立刻刷新，不用再问一次服务端', async () => {
+  const after = sheet({
+    counts: [{ code: 'B8', sheet: 4, prior: 4, classes: [0], level: 'ok', custom: false }],
+    classes: [{ ...sheet().classes[0]!, code: 'B8' }],
+    prior: { B8: 4 },
+    tally: { B8: 4 },
+  });
+  mockFetch({
+    'GET /api/sheets/1': { body: sheet() },
+    'PATCH /api/sheets/1/prior': { body: after },
+  });
+  show(1);
+
+  const box = await screen.findByLabelText('H15 的图纸数量');
+  fireEvent.blur(box, { target: { value: '9' } });
+
+  const list = await screen.findByLabelText('色号列表');
+  await waitFor(() => expect(within(list).getByText('B8')).toBeInTheDocument());
+  expect(within(list).queryByText('H15')).toBeNull();
+  // 全靠 PATCH 的返回：这张图纸一共只 GET 过一次
+  const gets = (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls.filter(
+    (c) => ((c[1] as RequestInit | undefined)?.method ?? 'GET').toUpperCase() === 'GET',
+  );
+  expect(gets).toHaveLength(1);
+});
+
+it('上方那张图纸也跟着改，和下载的是同一张', async () => {
+  const after = sheet({
+    classes: [{ ...sheet().classes[0]!, code: 'B8' }],
+    counts: [{ code: 'B8', sheet: 4, prior: 4, classes: [0], level: 'ok', custom: false }],
+    prior: { B8: 4 },
+    tally: { B8: 4 },
+  });
+  mockFetch({
+    'GET /api/sheets/1': { body: sheet() },
+    'PATCH /api/sheets/1/prior': { body: after },
+  });
+  show(1);
+
+  const box = await screen.findByLabelText('H15 的图纸数量');
+  fireEvent.blur(box, { target: { value: '9' } });
+
+  // 格子里印的色号变了——预览是照着改完之后的归属重画的
+  await waitFor(() =>
+    expect(ctx.fillText.mock.calls.map((c) => String(c[0]))).toContain('B8'),
+  );
 });

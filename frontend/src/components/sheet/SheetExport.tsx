@@ -1,16 +1,9 @@
 import { useState } from 'react';
 import type { Sheet } from '../../api/types';
-import {
-  type ExportCell,
-  type LegendEntry,
-  drawSheet,
-  layout,
-} from '../../lib/sheetExport';
+import { drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
 import { byCode } from '../../lib/sheetSort';
 import { useToast } from '../../state/ToastContext';
 import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
-
-const UNKNOWN = 'CCCCCC';
 
 /**
  * 把校对好的图纸导出成一张 PNG：坐标标尺 + 网格线 + 格内色号 + 底部汇总。
@@ -26,27 +19,12 @@ export default function SheetExport({ sheet }: { sheet: Sheet }) {
   async function download() {
     setBusy(true);
     try {
-      const codeOf = new Map(sheet.classes.map((c) => [c.klass, c.code]));
-      const cells: ExportCell[] = [];
-      for (let r = 0; r < sheet.rows; r += 1) {
-        for (let c = 0; c < sheet.cols; c += 1) {
-          const over = sheet.overrides[`${r},${c}`];
-          const k = sheet.labels[r * sheet.cols + c];
-          const code = over ?? (k !== undefined && k >= 0 ? codeOf.get(k) : undefined);
-          cells.push({
-            code: code ?? '',
-            hex: code ? (catalogue.get(code)?.hex ?? UNKNOWN) : UNKNOWN,
-          });
-        }
-      }
-
-      const legend: LegendEntry[] = Object.keys(sheet.tally)
-        .sort(byCode)
-        .map((code) => ({
-          code,
-          hex: catalogue.get(code)?.hex ?? UNKNOWN,
-          count: sheet.tally[code]!,
-        }));
+      // 和屏幕上那张预览**共用同一份转换和同一个渲染器**——想不一致都难
+      const { cells, legend } = sheetToDrawing(
+        sheet,
+        (code) => catalogue.get(code)?.hex,
+        byCode,
+      );
 
       const lay = layout(sheet.rows, sheet.cols, legend.length);
       const canvas = document.createElement('canvas');

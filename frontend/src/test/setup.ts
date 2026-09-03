@@ -25,6 +25,8 @@ export interface Ctx2DStub extends Record<string, unknown> {
   strokeRect: ReturnType<typeof vi.fn>;
   clearRect: ReturnType<typeof vi.fn>;
   drawImage: ReturnType<typeof vi.fn>;
+  fillText: ReturnType<typeof vi.fn>;
+  stroke: ReturnType<typeof vi.fn>;
   fillStyleLog: string[];
 }
 
@@ -46,9 +48,18 @@ export function stubCanvas2D(): Ctx2DStub {
     stroke: vi.fn(),
     arc: vi.fn(),
     fill: vi.fn(),
+    // 图纸的完整渲染（格内色号、标尺、底部汇总）全靠这个
+    fillText: vi.fn(),
+    strokeText: vi.fn(),
+    measureText: vi.fn(() => ({ width: 0 })),
+    save: vi.fn(),
+    restore: vi.fn(),
     fillStyleLog,
     strokeStyle: '',
     lineWidth: 0,
+    font: '',
+    textAlign: 'left',
+    textBaseline: 'alphabetic',
   } as unknown as Ctx2DStub;
   Object.defineProperty(ctx, 'fillStyle', {
     get: () => fillStyleLog[fillStyleLog.length - 1] ?? '',
