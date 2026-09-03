@@ -6,16 +6,18 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  HIT_MOUSE,
-  HIT_TOUCH,
-  type Rect,
   cellRect,
   corners,
+  fitView,
+  HIT_MOUSE,
+  HIT_TOUCH,
   hitCorner,
   moveCorner,
   snap,
   toImage,
   toScreen,
+  zoomAt,
+  type Rect,
 } from './sheetGeometry';
 
 const R: Rect = [10, 20, 110, 220];
@@ -131,5 +133,38 @@ describe('坐标变换', () => {
     const [sx, sy] = toScreen(ix, iy, view);
     expect(sx).toBeCloseTo(123);
     expect(sy).toBeCloseTo(456);
+  });
+});
+
+// ---------- 视图：缩放和平移 ----------
+
+describe('fitView', () => {
+  it('把整张图居中放进框里', () => {
+    // 400x300 的图放进 200x200 的框：按宽度缩一半，上下留白
+    expect(fitView(400, 300, 200, 200)).toEqual({ scale: 0.5, ox: 0, oy: 25 });
+  });
+
+  it('框比图大就放大到贴边', () => {
+    expect(fitView(100, 100, 300, 200)).toEqual({ scale: 2, ox: 50, oy: 0 });
+  });
+
+  it('尺寸缺失时给一个不会把界面搞崩的视图', () => {
+    expect(fitView(400, 300, 0, 0)).toEqual({ scale: 1, ox: 0, oy: 0 });
+  });
+});
+
+describe('zoomAt', () => {
+  it('定点在缩放前后停在原地', () => {
+    const v = { scale: 1, ox: 0, oy: 0 };
+    const [ix, iy] = toImage(120, 80, v);
+    const next = zoomAt(v, 120, 80, 2, 0.1, 10);
+    expect(next.scale).toBe(2);
+    expect(toScreen(ix, iy, next)).toEqual([120, 80]);
+  });
+
+  it('缩放倍率夹在上下限之间', () => {
+    const v = { scale: 5, ox: 0, oy: 0 };
+    expect(zoomAt(v, 0, 0, 10, 0.5, 8).scale).toBe(8);
+    expect(zoomAt(v, 0, 0, 0.001, 0.5, 8).scale).toBe(0.5);
   });
 });

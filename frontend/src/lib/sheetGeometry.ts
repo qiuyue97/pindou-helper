@@ -108,3 +108,27 @@ export function toImage(px: number, py: number, v: View): [number, number] {
 export function toScreen(ix: number, iy: number, v: View): [number, number] {
   return [ix * v.scale + v.ox, iy * v.scale + v.oy];
 }
+
+/** 缩放范围。下限是「整张图缩到适应」的倍率，这里给的是相对它的倍数。 */
+export const ZOOM_MIN = 1;
+export const ZOOM_MAX = 12;
+
+/** 整张图居中放进 `cw x ch` 的框里。 */
+export function fitView(iw: number, ih: number, cw: number, ch: number): View {
+  if (!iw || !ih || !cw || !ch) return { scale: 1, ox: 0, oy: 0 };
+  const scale = Math.min(cw / iw, ch / ih);
+  return { scale, ox: (cw - iw * scale) / 2, oy: (ch - ih * scale) / 2 };
+}
+
+/**
+ * 以屏幕上的 (px, py) 为定点缩放。
+ *
+ * 定点不动是手势的全部意义：双指捏合时两指中间那一点、滚轮缩放时光标下那一点，
+ * 必须停在原地，否则图会从手底下溜走。
+ */
+export function zoomAt(v: View, px: number, py: number, factor: number,
+                       min: number, max: number): View {
+  const scale = Math.min(max, Math.max(min, v.scale * factor));
+  const k = scale / v.scale;
+  return { scale, ox: px - (px - v.ox) * k, oy: py - (py - v.oy) * k };
+}

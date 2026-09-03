@@ -4,7 +4,7 @@
  * canvas 在 jsdom 下画不出东西，所以这里只验证 DOM 状态和交互后传出去的数字；
  * 几何算术本身在 lib/sheetGeometry.test.ts 里已经钉死了。
  */
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { SheetGuess } from '../../api/types';
 import { type Ctx2DStub, stubCanvas2D } from '../../test/setup';
@@ -34,10 +34,25 @@ function stubImage(fail = false) {
   vi.stubGlobal('Image', ImageStub);
 }
 
+/** 取景框的大小。jsdom 里 clientWidth 恒为 0，视图会退化成 1:1；这里明确给出
+ *  尺寸，缩放/平移才有意义。默认给成和默认图一样大——于是「适应」之后正好 1:1，
+ *  下面那些按图像坐标写的用例照旧成立。 */
+function sizeStage(w = 400, h = 300) {
+  Object.defineProperty(HTMLDivElement.prototype, 'clientWidth', {
+    configurable: true,
+    get: () => w,
+  });
+  Object.defineProperty(HTMLDivElement.prototype, 'clientHeight', {
+    configurable: true,
+    get: () => h,
+  });
+}
+
 let ctx: Ctx2DStub;
 beforeEach(() => {
   ctx = stubCanvas2D();
   stubImage();
+  sizeStage();
 });
 
 function setup(guess: Partial<SheetGuess> = {}) {
@@ -142,27 +157,29 @@ it('检测失败时没有靶点，拖到哪就是哪', () => {
   expect(onConfirm.mock.calls[0]![0].rect.slice(0, 2)).toEqual([52, 52]);
 });
 
-it('触摸的命中半径更大——手指没有像素精度', () => {
+/** 在左上角外侧 hypot(25,25)≈35 处按下，再挪 5 像素，返回最终的框。 */
+function grabNear(pointerType: 'mouse' | 'touch') {
   const onConfirm = setup({ snap_x: [], snap_y: [] });
   const canvas = screen.getByLabelText('网格范围');
   sizeCanvas(canvas);
-  // 距左上角 hypot(25,25)≈35：鼠标够不着
-  fireEvent.pointerDown(canvas, { clientX: 65, clientY: 65, pointerId: 1, pointerType: 'mouse' });
-  fireEvent.pointerMove(canvas, { clientX: 70, clientY: 70, pointerId: 1, pointerType: 'mouse' });
+  fireEvent.pointerDown(canvas, { clientX: 65, clientY: 65, pointerId: 1, pointerType });
+  fireEvent.pointerMove(canvas, { clientX: 70, clientY: 70, pointerId: 1, pointerType });
   fireEvent.pointerUp(canvas, { pointerId: 1 });
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
-  expect(onConfirm.mock.calls[0]![0].rect).toEqual([40, 40, 340, 260]);
+  return onConfirm.mock.calls[0]![0].rect;
+}
 
-  // 同一个点，手指够得着
-  fireEvent.pointerDown(canvas, { clientX: 65, clientY: 65, pointerId: 2, pointerType: 'touch' });
-  fireEvent.pointerMove(canvas, { clientX: 70, clientY: 70, pointerId: 2, pointerType: 'touch' });
-  fireEvent.pointerUp(canvas, { pointerId: 2 });
-  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
-  expect(onConfirm.mock.calls[1]![0].rect.slice(0, 2)).toEqual([70, 70]);
+it('触摸的命中半径更大——手指没有像素精度', () => {
+  // 35 像素外：鼠标够不着，那一下算平移，框纹丝不动
+  expect(grabNear('mouse')).toEqual([40, 40, 340, 260]);
+  cleanup();
+  // 同一个点，手指够得着。必须重新渲染：上面那一下已经把视图平移过了
+  expect(grabNear('touch').slice(0, 2)).toEqual([70, 70]);
 });
 
-it('大图也拖得动角点——命中半径是屏幕像素，不是图像像素', () => {
-  // 4096x3000 的图显示成 900px 宽：缩放比 ≈4.55
+it('大图也拖得动角点——命中半径是屏幕像素，不是图像像素', async () => {
+  // 4096x3000 的图放进 900x659 的取景框：缩放比 ≈0.22
+  sizeStage(900, 659);
   const onConfirm = setup({
     width: 4096,
     height: 3000,
@@ -172,17 +189,18 @@ it('大图也拖得动角点——命中半径是屏幕像素，不是图像像�
   });
   const canvas = screen.getByLabelText('网格范围');
   sizeCanvas(canvas, 900, 659);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
 
-  // 左上角 (100,100) 图像坐标 → 屏幕上约 (22,22)。在它旁边 10 屏幕像素处按下，
-  // 换算回图像空间是 45 像素——如果半径没做换算（22 图像像素），就抓不到。
+  // 左上角 (100,100) 图像坐标 → 屏幕上约 (22,22)。在它旁边 10 屏幕像素处按下：
+  // 换算回图像空间是 45 像素，命中半径要是按图像像素算（22）就抓不到。
   fireEvent.pointerDown(canvas, { clientX: 32, clientY: 32, pointerId: 1 });
   fireEvent.pointerMove(canvas, { clientX: 60, clientY: 60, pointerId: 1 });
   fireEvent.pointerUp(canvas, { pointerId: 1 });
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
 
   const moved = onConfirm.mock.calls[0]![0].rect;
-  expect(moved[0]).not.toBe(100);
-  expect(moved[1]).not.toBe(100);
+  expect(moved[0]).toBeGreaterThan(100);
+  expect(moved[1]).toBeGreaterThan(100);
 });
 
 it('小图上命中半径不会大到误抓', () => {
@@ -219,8 +237,122 @@ it('原图没了就说清楚', async () => {
   expect(await screen.findByText(/原图已不存在/)).toBeInTheDocument();
 });
 
-it('画布高度不超过一屏，否则角点和下面的按钮都在屏幕外', () => {
-  setup({ width: 4096, height: 6044 });
+// ---------- 缩放和平移 ----------
+
+/** 最后一次 drawImage 画出来的宽度 = 图宽 x 当前倍率。 */
+function drawnWidth(): number {
+  const calls = ctx.drawImage.mock.calls;
+  return Number(calls[calls.length - 1]![3]);
+}
+
+it('画布装在固定大小的取景框里', () => {
+  // 一张 4096x6044 的图按原尺寸铺开有两千多像素高，角点和下面的按钮全在屏幕外。
+  // 高度上限写在 CSS 里（.grid-confirm-stage 的 70vh），这里钉住结构本身。
+  const { container } = render(
+    <GridConfirm guess={{ ...GUESS, width: 4096, height: 6044 }} onConfirm={vi.fn()} />,
+  );
+  const stage = container.querySelector('.grid-confirm-stage');
+  expect(stage).toContainElement(screen.getByLabelText('网格范围'));
+});
+
+it('「适应」把整张图放回取景框', async () => {
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole('button', { name: '放大' }));
+  expect(drawnWidth()).toBeGreaterThan(400);
+  fireEvent.click(screen.getByRole('button', { name: '适应' }));
+  expect(drawnWidth()).toBe(400);
+});
+
+it('放大缩小按钮改的是倍率', async () => {
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  const before = drawnWidth();
+  fireEvent.click(screen.getByRole('button', { name: '放大' }));
+  const zoomed = drawnWidth();
+  expect(zoomed).toBeGreaterThan(before);
+  fireEvent.click(screen.getByRole('button', { name: '缩小' }));
+  expect(drawnWidth()).toBeLessThan(zoomed);
+});
+
+it('缩不到比「适应」更小——否则图会缩成一个点找不回来', async () => {
+  setup();
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  for (let i = 0; i < 8; i += 1) fireEvent.click(screen.getByRole('button', { name: '缩小' }));
+  expect(drawnWidth()).toBe(400);
+});
+
+it('双指捏合放大', async () => {
+  setup();
   const canvas = screen.getByLabelText('网格范围');
-  expect(canvas.style.maxWidth).toBe(`calc(70vh * ${4096 / 6044})`);
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  const before = drawnWidth();
+
+  fireEvent.pointerDown(canvas, { clientX: 180, clientY: 150, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerDown(canvas, { clientX: 220, clientY: 150, pointerId: 2, pointerType: 'touch' });
+  // 两指间距从 40 拉到 80
+  fireEvent.pointerMove(canvas, { clientX: 160, clientY: 150, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerMove(canvas, { clientX: 240, clientY: 150, pointerId: 2, pointerType: 'touch' });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 2 });
+
+  expect(drawnWidth()).toBeGreaterThan(before);
+});
+
+it('第二根手指落下时不会顺手把角点拖走', async () => {
+  const onConfirm = setup({ snap_x: [], snap_y: [] });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  // 第一根手指正好按在左上角上，第二根落下之后就该是捏合，不再是拖角
+  fireEvent.pointerDown(canvas, { clientX: 40, clientY: 40, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerDown(canvas, { clientX: 240, clientY: 150, pointerId: 2, pointerType: 'touch' });
+  fireEvent.pointerMove(canvas, { clientX: 20, clientY: 20, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 2 });
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+
+  expect(onConfirm.mock.calls[0]![0].rect).toEqual([40, 40, 340, 260]);
+});
+
+it('空白处拖动是平移，不动框', async () => {
+  const onConfirm = setup({ snap_x: [], snap_y: [] });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  fireEvent.pointerDown(canvas, { clientX: 200, clientY: 150, pointerId: 1 });
+  fireEvent.pointerMove(canvas, { clientX: 230, clientY: 150, pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0].rect).toEqual([40, 40, 340, 260]);
+  // 框没动，图挪了 30 像素
+  const calls = ctx.drawImage.mock.calls;
+  expect(Number(calls[calls.length - 1]![1])).toBe(30);
+});
+
+it('越出图片边界的框原样保留——那多半是对的', () => {
+  // 真实数据：3492x3791 的图，检测给出的框从 -22 到 3514。量过：格距 52.00
+  // 干干净净，每一格的中心都还在图内，图片最外圈 12px 是纯白边距——越出去的
+  // 22px 就是最外一圈的半格留白。夹回去会把格距压成 51.35，最后一格中心偏掉
+  // 44px（将近一整格），采样直接废掉。
+  const onConfirm = setup({ width: 3492, height: 3791, rect: [-22, -22, 3514, 3514] });
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0].rect).toEqual([-22, -22, 3514, 3514]);
+});
+
+it('框可以拖到图片外面去', async () => {
+  const onConfirm = setup({ snap_x: [], snap_y: [] });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  fireEvent.pointerDown(canvas, { clientX: 40, clientY: 40, pointerId: 1 });
+  fireEvent.pointerMove(canvas, { clientX: -15, clientY: -15, pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0].rect.slice(0, 2)).toEqual([-15, -15]);
 });

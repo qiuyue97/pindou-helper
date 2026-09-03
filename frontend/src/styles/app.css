@@ -349,12 +349,47 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   margin-top: 4px;
 }
 
+/* 框选台整体居中。原来是贴着左边一小块，右边空一大片。 */
+.grid-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* 固定大小的取景框，图片缩放平移都发生在它里面。给一个中性底色，图没铺满时
+   一眼看得出边界在哪。 */
+.grid-confirm-stage {
+  width: 100%;
+  height: 70vh;
+  min-height: 320px;
+  background: #f2f3f5;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 6px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.grid-confirm-zoom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: stretch;
+}
+.grid-confirm-zoom button {
+  min-width: 40px;
+  min-height: 36px;
+}
+
 .grid-confirm-controls {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   margin-top: 8px;
+  align-self: stretch;
 }
 .grid-confirm-controls input[type='number'] {
   width: 5em;
