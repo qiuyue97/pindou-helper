@@ -218,11 +218,17 @@ function CellPane({
   // 异步等图。原图有好几 MB，加载窗口很长，期间任何一次重渲染都会把刚画好的内容
   // 清掉，结果就是画布**一直是空白的**。
   const [img, setImg] = useState<HTMLImageElement | null>(null);
+  // 原图取不到（卷被清过、记录还在）时要说出来。之前是静静地留一块空白画布，
+  // 用户只能看到「共 N 个豆点」下面什么都没有，完全不知道发生了什么。
+  const [gone, setGone] = useState(false);
   useEffect(() => {
     let alive = true;
     const im = new Image();
     im.onload = () => {
       if (alive) setImg(im);
+    };
+    im.onerror = () => {
+      if (alive) setGone(true);
     };
     im.src = `/api/sheets/${sheet.id}/image`;
     return () => {
@@ -260,6 +266,13 @@ function CellPane({
         <strong>{row.code}</strong>
         <span className="muted">共 {cells.length} 个豆点</span>
       </p>
+
+      {gone && (
+        <p className="error">
+          原图已不存在，看不到豆点缩略图了。识别结果还在，色号照样能改；要重新看图请
+          重新上传这张图纸。
+        </p>
+      )}
 
       {/* canvas 和勾选层必须在**同一个贴合 canvas 尺寸**的容器里，否则勾选框会被
           摊到整行宽度上、和格子完全对不上。 */}

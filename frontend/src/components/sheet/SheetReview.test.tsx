@@ -333,3 +333,17 @@ it('翻页会重画', async () => {
   fireEvent.click(screen.getByRole('button', { name: '下一页' }));
   expect(ctx.drawImage.mock.calls.length).toBeGreaterThan(before);
 });
+
+it('原图没了就说清楚，而不是留一块空白', async () => {
+  class Broken {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    set src(_v: string) {
+      setTimeout(() => this.onerror?.(), 0);
+    }
+  }
+  vi.stubGlobal('Image', Broken);
+
+  setup();
+  expect(await screen.findByText(/原图已不存在/)).toBeInTheDocument();
+});

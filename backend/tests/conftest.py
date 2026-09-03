@@ -10,6 +10,11 @@ TEST_JWT_SECRET = "test-secret-for-pytest-only-0123456789"
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv("PINDOU_DB_URL", f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+    # 上传目录必须和数据库一样隔离到 tmp_path。少了这一行，测试会把图片写进开发机
+    # 真正的 ./dev-uploads，而且 test_a_missing_original_is_a_404_not_a_500 会
+    # os.walk 整个目录把文件全删掉——跑一次测试就把开发者自己上传的图纸清空了。
+    # 这件事真的发生过。
+    monkeypatch.setenv("PINDOU_UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("PINDOU_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("PINDOU_CORS_ORIGINS", "http://testserver")
     # Settings reads backend/.env, which on a developer machine holds real LLM

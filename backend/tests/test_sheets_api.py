@@ -135,14 +135,21 @@ def test_another_users_sheet_is_a_404_not_a_403(vip, grid_png):
     assert vip.get(f"/api/sheets/{sid}/image").status_code == 404
 
 
-def test_a_missing_original_is_a_404_not_a_500(vip, grid_png, tmp_path):
-    """卷被清过之后记录还在。要报「图片已不存在」，不是崩掉。"""
+def test_a_missing_original_is_a_404_not_a_500(vip, grid_png):
+    """卷被清过之后记录还在。要报「图片已不存在」，不是崩掉。
+
+    只删这张图纸自己那个文件。原来是 os.walk 整个 upload_dir 全删——配上
+    conftest 当时没隔离上传目录，跑一次测试就把开发机上真实的图纸清空了。
+    现在目录是隔离的，但这种「遍历删除」的写法本身就不该留在测试里。
+    """
     import os
 
     from app.config import get_settings
+    from app.db import get_sessionmaker
+    from app.models import Sheet
 
     sid = _upload(vip, grid_png).json()["id"]
-    for root, _dirs, files in os.walk(get_settings().upload_dir):
-        for f in files:
-            os.remove(os.path.join(root, f))
+    with get_sessionmaker()() as session:
+        rel = session.get(Sheet, sid).image
+    os.remove(os.path.join(get_settings().upload_dir, rel))
     assert vip.get(f"/api/sheets/{sid}/image").status_code == 404
