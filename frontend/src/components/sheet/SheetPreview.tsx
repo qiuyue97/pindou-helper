@@ -8,9 +8,6 @@ const ZOOM_MIN = 1;
 const ZOOM_MAX = 6;
 const clamp = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
 
-/** 放大后取景框的高度（1 倍时不限高，整张往下铺，页面自己滚）。 */
-const ZOOMED_VIEWPORT_H = '80vh';
-
 /**
  * 图纸预览：和「下载图纸」用**同一个渲染器**画出来的同一张图。
  *
@@ -21,12 +18,13 @@ const ZOOMED_VIEWPORT_H = '80vh';
  * 按钮，放大后**按住拖动平移**。这里是**重画**不是 CSS 变换——按更大的格子重跑
  * layout，canvas 的像素数跟着涨，所以怎么放都清晰。
  *
- * 尺寸策略：
- *   - 宽度跟着 .sheet-page 走（结果页统一比 .app 宽一点、居中），预览铺满它。
- *   - 只按宽度收（fit width），**高度随它去**——图纸长一点无所谓，1 倍时整张往下
- *     铺、页面正常滚。这样 canvas 永远自然像素、从不 CSS 缩放。
- *   - 放大后才把框钉成 80vh 的滚动取景框，滚轮 + 拖动都能平移。跨 1↔N 那一下
- *     会重排，用 scrollBy 把预览顶端拉回原位，页面不跳。
+ * 尺寸策略（两条都是踩坑踩出来的）：
+ *   - **取景框尺寸恒定** = 1 倍时的图纸宽高，任何缩放级别都不变。1 倍时 canvas
+ *     刚好填满、overflow hidden；放大后 canvas 溢出、overflow auto，滚动/拖动
+ *     平移。框不变 -> 下方元素不动 -> **滚轮缩放不跳**。之前跳就是因为放大后
+ *     把框钉成 80vh，和 1 倍的高不一样，下面的东西被顶上来。
+ *   - 只按宽度收，高度随它——图纸长一点无所谓。取景框在 .preview-wrap 里
+ *     **居中**（margin auto），两边留等宽白边，不再左贴边右留白。
  *
  * 每次改动（改整类、改豆点、改图纸数量）都会重画：`sheet` 一变，useMemo 重算。
  */
@@ -41,8 +39,6 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   const [availW, setAvailW] = useState(1400);
   /** 缩放后把滚动条挪到这里，让光标/双指中点那一点不动。 */
   const pendingAnchor = useRef<{ cx: number; cy: number; px: number; py: number } | null>(null);
-  /** 跨 1↔缩放 那一下，用它把预览顶端拉回视口原位。 */
-  const keepWrapTop = useRef<number | null>(null);
 
   const drawing = useMemo(
     () => sheetToDrawing(sheet, (code) => catalogue.get(code)?.hex, byCode),
@@ -97,14 +93,8 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     });
   }, [sheet.rows, sheet.cols, drawing, lay, focus]);
 
-  // 缩放后：先把预览顶端拉回原位（跨 1↔N 那一下框会重排），再把取景框滚到锚点。
+  // 取景框尺寸不随 zoom 变，所以不用再补偿页面滚动——只把取景框内部滚到锚点。
   useLayoutEffect(() => {
-    const wrap = wrapRef.current;
-    if (wrap && keepWrapTop.current !== null) {
-      const now = wrap.getBoundingClientRect().top;
-      window.scrollBy(0, now - keepWrapTop.current);
-      keepWrapTop.current = null;
-    }
     const el = scrollRef.current;
     const a = pendingAnchor.current;
     if (el && a) {
@@ -120,9 +110,6 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     setZoom((z) => {
       const nz = clamp(z * factor);
       if (nz === z) return z;
-      if ((z === 1) !== (nz === 1)) {
-        keepWrapTop.current = wrapRef.current?.getBoundingClientRect().top ?? null;
-      }
       const ratio = nz / z;
       pendingAnchor.current = {
         cx: (el.scrollLeft + px) * ratio,
@@ -202,19 +189,20 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
         )}
       </div>
 
+      {/* 取景框恒为 1 倍图纸的宽高，居中。1 倍时 canvas 刚好填满；放大后溢出，
+          滚动/拖动平移。框尺寸不变 -> 下方元素不动 -> 缩放不跳。 */}
       <div
         ref={scrollRef}
         className="preview-scroll"
-        style={
-          zoom === 1
-            ? { overflow: 'visible', touchAction: 'auto', cursor: 'default' }
-            : {
-                height: ZOOMED_VIEWPORT_H,
-                overflow: 'auto',
-                touchAction: 'none',
-                cursor: 'grab',
-              }
-        }
+        style={{
+          width: base.width,
+          height: base.height,
+          maxWidth: '100%',
+          margin: '0 auto',
+          overflow: zoom === 1 ? 'hidden' : 'auto',
+          touchAction: zoom === 1 ? 'auto' : 'none',
+          cursor: zoom === 1 ? 'default' : 'grab',
+        }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -225,7 +213,7 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
           aria-label="完整图纸"
           width={lay.width}
           height={lay.height}
-          style={{ display: 'block', maxWidth: zoom === 1 ? '100%' : 'none' }}
+          style={{ display: 'block' }}
         />
       </div>
 

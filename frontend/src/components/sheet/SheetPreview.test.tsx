@@ -135,8 +135,9 @@ it('滚轮向上是放大，且是重画不是 CSS 拉伸——canvas 像素数�
 
   fireEvent.wheel(scroll, { deltaY: -240 });
   expect(canvas.width).toBeGreaterThan(w1);
-  // 放大后按原始像素显示，不被 CSS 缩回去
-  expect(canvas.style.maxWidth).toBe('none');
+  // canvas 永远按自然像素画，从不设 CSS 宽度去拉伸
+  expect(canvas.style.width).toBe('');
+  expect(canvas.style.maxWidth).toBe('');
 });
 
 it('滚轮向下缩不到 1 倍以下', () => {
@@ -148,7 +149,6 @@ it('滚轮向下缩不到 1 倍以下', () => {
   fireEvent.wheel(scroll, { deltaY: 1000 });
   fireEvent.wheel(scroll, { deltaY: 1000 });
   expect(canvas.width).toBe(w1);
-  expect(canvas.style.maxWidth).toBe('100%');
 });
 
 it('复位回到 1 倍', () => {
@@ -159,12 +159,16 @@ it('复位回到 1 倍', () => {
   expect(screen.getByText('滚轮或双指缩放')).toBeInTheDocument();
 });
 
-it('1 倍时完整显示，不出滚动条；放大后才变成滚动取景框', () => {
+it('取景框宽高恒定：1 倍 hidden 不出条，放大后 auto 可滚动，但盒子尺寸不变', () => {
   const { container } = render(<SheetPreview sheet={makeSheet()} />);
   const scroll = container.querySelector('.preview-scroll') as HTMLElement;
-  expect(scroll.style.overflow).toBe('visible');
+  const w0 = scroll.style.width;
+  const h0 = scroll.style.height;
+  expect(scroll.style.overflow).toBe('hidden');
 
   fireEvent.wheel(scroll, { deltaY: -240 });
   expect(scroll.style.overflow).toBe('auto');
-  expect(scroll.style.height).toBe('80vh');
+  // 关键：放大后取景框还是那么大，下方元素不会被顶动
+  expect(scroll.style.width).toBe(w0);
+  expect(scroll.style.height).toBe(h0);
 });
