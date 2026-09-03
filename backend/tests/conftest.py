@@ -21,6 +21,10 @@ def app(tmp_path, monkeypatch):
     monkeypatch.setenv("PINDOU_FASTGPT_BASE_URL", "")
     monkeypatch.setenv("PINDOU_FASTGPT_API_KEY", "")
     monkeypatch.setenv("PINDOU_FASTGPT_APP_ID", "")
+    # 同理，图纸识别的 OCR。开发机的 .env 里配了真 token 之后，后台线程会真的去调
+    # MinerU：慢、计费、看天气，而且识别任务会卡在 running 直到超时——测试于是变成
+    # 「等一个网络请求」。置空让每次识别都走颜色兜底那条离线路径。
+    monkeypatch.setenv("PINDOU_MINERU_TOKEN", "")
 
     from app.config import get_settings
     from app.db import get_engine, get_sessionmaker, init_db

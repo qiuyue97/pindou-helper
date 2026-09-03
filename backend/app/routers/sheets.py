@@ -40,8 +40,8 @@ from app.schemas import (
 from app.sheet import pipeline
 from app.sheet.decide import ClassRecord
 from app.sheet.matrix import apply_cell_patch, apply_class_patch, tally
-from app.sheet.reconcile import CountRow, reconcile
-from app.text_parse import code_key, parse_lines
+from app.sheet.reconcile import reconcile
+from app.text_parse import parse_lines
 
 log = logging.getLogger("pindou.sheets")
 
@@ -340,28 +340,13 @@ def _recount(sheet: Sheet) -> None:
     重判紫色。
     """
     recs = [ClassRecord(**c) for c in (sheet.classes or [])]
-    rows = reconcile(recs, sheet.prior or None)
-
-    counted = tally(sheet.labels or [], sheet.classes or [],
-                    sheet.overrides or {}, sheet.rows, sheet.cols)
-    by_code = {r.code: r for r in rows}
-    for code, n in counted.items():
-        if code in by_code:
-            by_code[code].sheet = n
-        else:
-            # 只在覆盖里出现过的色号：它没有任何类，但确实占着格子
-            rows.append(CountRow(code=code, sheet=n,
-                                 prior=(sheet.prior or {}).get(code)))
-
-    # 数量被改写过了，紫色要按新数量重判——只在真有第二份证据时才判
-    if sheet.prior:
-        for row in rows:
-            if row.prior != row.sheet:
-                row.level = "count"
-            elif row.level == "count":
-                row.level = "ok"       # 用户把基准改对了，紫色该消失
-
-    rows.sort(key=lambda r: code_key(r.code))
+    # 传 counted：用户改过格子之后，类的格子数就不再等于该色号实际占的格子数。
+    # 定级规则全在 reconcile 里，这里不再重复一遍——重复正是漂移的来源。
+    rows = reconcile(
+        recs, sheet.prior or None,
+        counted=tally(sheet.labels or [], sheet.classes or [],
+                      sheet.overrides or {}, sheet.rows, sheet.cols),
+    )
     sheet.counts = [asdict(r) for r in rows]
 
     # 类的 level 同步回去——前端的卡片排序读它
