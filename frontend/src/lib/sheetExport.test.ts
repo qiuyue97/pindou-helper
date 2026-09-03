@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type ExportCell,
   type LegendEntry,
+  dimHex,
   drawSheet,
   inkOn,
   layout,
@@ -88,6 +89,32 @@ describe('inkOn', () => {
   it('浅底用黑字，深底用白字', () => {
     expect(inkOn('FFFFFF')).toBe('#111');
     expect(inkOn('000000')).toBe('#fff');
+  });
+});
+
+describe('dimHex', () => {
+  it('压成灰，丢掉彩度', () => {
+    const g = dimHex('FF0000');
+    expect(g.slice(0, 2)).toBe(g.slice(2, 4));
+    expect(g.slice(2, 4)).toBe(g.slice(4, 6));
+  });
+
+  it('灰带压在浅色豆子下面很远的地方', () => {
+    // 221 色卡里 21 个色号亮度 >= 235（最亮的 H2 是 254.7）。灰带顶得太高，
+    // 选中一颗浅色豆子时它和周围只差十几级，等于没突出。
+    const palest = Number.parseInt(dimHex('FFFFFF').slice(0, 2), 16);
+    expect(palest).toBeLessThanOrEqual(200);
+    expect(235 - palest).toBeGreaterThan(30);
+  });
+
+  it('再黑也不会黑到看不出图案', () => {
+    expect(Number.parseInt(dimHex('000000').slice(0, 2), 16)).toBeGreaterThan(120);
+  });
+
+  it('亮度顺序保留下来，图形轮廓还看得出', () => {
+    const dark = Number.parseInt(dimHex('202020').slice(0, 2), 16);
+    const light = Number.parseInt(dimHex('E0E0E0').slice(0, 2), 16);
+    expect(dark).toBeLessThan(light);
   });
 });
 
@@ -188,5 +215,61 @@ describe('drawSheet', () => {
   it('汇总为空时不画汇总，也不崩', () => {
     const { ctx } = draw(1, 1, ['H15'], []);
     expect(ctx.texts.some((t) => t.text.endsWith('颗'))).toBe(false);
+  });
+
+  // ---------- 突出显示 ----------
+
+  it('没选色号时一切照常', () => {
+    const ctx = ctxStub();
+    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    drawSheet(ctx, {
+      rows: 1,
+      cols: 2,
+      cells: [
+        { code: 'A1', hex: 'FF0000' },
+        { code: 'B1', hex: '0000FF' },
+      ],
+      legend: [],
+      layout: lay,
+    });
+    expect(ctx.fills).toContain('#FF0000');
+    expect(ctx.fills).toContain('#0000FF');
+  });
+
+  it('没选中的格子填灰，不是填淡——填淡只会更白', () => {
+    const ctx = ctxStub();
+    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    drawSheet(ctx, {
+      rows: 1,
+      cols: 2,
+      cells: [
+        { code: 'A1', hex: 'FF0000' },
+        { code: 'B1', hex: '0000FF' },
+      ],
+      legend: [],
+      layout: lay,
+      focus: new Set(['A1']),
+    });
+    expect(ctx.fills).toContain('#FF0000');
+    expect(ctx.fills).not.toContain('#0000FF');
+    expect(ctx.fills).toContain(`#${dimHex('0000FF')}`);
+  });
+
+  it('没选中的格子不印色号——满屏灰字比颜色还抢眼', () => {
+    const ctx = ctxStub();
+    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    drawSheet(ctx, {
+      rows: 1,
+      cols: 2,
+      cells: [
+        { code: 'A1', hex: 'FF0000' },
+        { code: 'B1', hex: '0000FF' },
+      ],
+      legend: [],
+      layout: lay,
+      focus: new Set(['A1']),
+    });
+    expect(ctx.texts.some((t) => t.text === 'A1')).toBe(true);
+    expect(ctx.texts.some((t) => t.text === 'B1')).toBe(false);
   });
 });

@@ -8,6 +8,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Sheet } from '../../api/types';
+import { dimHex } from '../../lib/sheetExport';
 import { type Ctx2DStub, stubCanvas2D } from '../../test/setup';
 import SheetPreview from './SheetPreview';
 
@@ -79,31 +80,38 @@ it('还没识别出行列时不画', () => {
 
 it('默认全部照常画', () => {
   render(<SheetPreview sheet={makeSheet()} />);
-  expect(ctx.alphaLog.filter((a) => a < 1)).toHaveLength(0);
+  expect(ctx.fillStyleLog).toContain('#00FF00');
+  expect(ctx.fillStyleLog).toContain('#0000FF');
 });
 
-it('选中一个色号，其余的调淡', () => {
+it('选中一个色号，其余的压成灰', () => {
   render(<SheetPreview sheet={makeSheet()} />);
+  // 首次渲染画过一遍了，清掉再点，断言的才是「选中之后」画了什么
+  ctx.fillStyleLog.length = 0;
+  ctx.fillText.mock.calls.length = 0;
   fireEvent.click(screen.getByRole('button', { name: /H15/ }));
-  // 两格 H15 照常，两格 B8 调淡
-  expect(ctx.alphaLog.filter((a) => a < 1).length).toBeGreaterThan(0);
+  expect(ctx.fillStyleLog).toContain('#00FF00');
+  expect(ctx.fillStyleLog).toContain(`#${dimHex('0000FF')}`);
+  // 选中的那两格还印着色号，没选中的不印
+  expect(texts()).toContain('H15');
+  expect(texts().filter((t) => t === 'B8')).toHaveLength(1); // 只剩底部汇总那一条
 });
 
 it('再点一下取消，全部恢复', () => {
   render(<SheetPreview sheet={makeSheet()} />);
   const chip = screen.getByRole('button', { name: /H15/ });
   fireEvent.click(chip);
-  ctx.alphaLog.length = 0;
+  ctx.fillStyleLog.length = 0;
   fireEvent.click(chip);
-  expect(ctx.alphaLog.filter((a) => a < 1)).toHaveLength(0);
+  expect(ctx.fillStyleLog).toContain('#0000FF');
 });
 
 it('「全部显示」一键还原', () => {
   render(<SheetPreview sheet={makeSheet()} />);
   fireEvent.click(screen.getByRole('button', { name: /H15/ }));
-  ctx.alphaLog.length = 0;
+  ctx.fillStyleLog.length = 0;
   fireEvent.click(screen.getByRole('button', { name: '全部显示' }));
-  expect(ctx.alphaLog.filter((a) => a < 1)).toHaveLength(0);
+  expect(ctx.fillStyleLog).toContain('#0000FF');
 });
 
 it('没选任何色号时不显示「全部显示」', () => {

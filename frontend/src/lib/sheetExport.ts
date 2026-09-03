@@ -102,8 +102,43 @@ export function inkOn(hex: string): string {
  *
  * 只依赖 2D 上下文，不碰 DOM——所以能在测试里对着桩断言画了什么。
  */
-/** 没被选中的色号画成这个透明度。留一点而不是全隐，是为了还能看出图形轮廓。 */
-const DIM = 0.18;
+/** 底部汇总里没被选中的那几项画成这个透明度。 */
+const DIM_LEGEND = 0.3;
+
+/**
+ * 被调淡的格子压进这一段灰。
+ *
+ * 上限 200 是量出来的，不是估的：221 色卡里有 **21 个色号亮度 ≥ 235**（最亮的
+ * H2 是 254.7，基本就是白的），43 个 ≥ 220。灰带只要顶到 238，选中一颗浅色豆子
+ * 时它和周围调淡的格子只差十几级——等于没突出。压到 200，最浅的豆子也高出
+ * 五十多级，加上只有选中的格子印色号，一眼就找得到。
+ *
+ * 下限 130 而不是更低：还要留得住图形轮廓，一片死黑就看不出图案了。
+ */
+const DIM_LO = 130;
+const DIM_HI = 200;
+
+/**
+ * 没被选中的色号画成什么颜色。
+ *
+ * 只降透明度是不行的：透明度是往**白底**上混，浅色越混越白，最后和空格、和
+ * 白豆子糊成一片——正是要突出一个浅色色号时它整个看不见的原因。
+ *
+ * 改成压成灰：丢掉彩度，再把亮度压进 185..238 这一段。于是
+ *
+ *   - 任何颜色调淡之后都明显「不是白的」，浅色豆子有东西可衬；
+ *   - 亮度顺序保留下来，图形轮廓还看得出来，不是一片糊；
+ *   - 上限 238 比纯白暗，和空格（白 + 斜纹）也分得开。
+ */
+export function dimHex(hex: string): string {
+  const n = Number.parseInt(hex, 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  const y = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+  const v = Math.round(DIM_LO + y * (DIM_HI - DIM_LO));
+  return ((v << 16) | (v << 8) | v).toString(16).padStart(6, '0');
+}
 
 /** 背景斜纹的颜色和粗细。要淡到不抢戏，又要在纯白上看得出来。 */
 const HATCH = 'rgba(0,0,0,0.07)';
@@ -170,13 +205,15 @@ export function drawSheet(
       if (!it || !it.code) continue; // 空格留白
       const x = ruler + c * cell;
       const y = ruler + r * cell;
-      ctx.globalAlpha = focus && !focus.has(it.code) ? DIM : 1;
-      ctx.fillStyle = `#${it.hex}`;
+      const dim = focus !== null && !focus.has(it.code);
+      ctx.fillStyle = `#${dim ? dimHex(it.hex) : it.hex}`;
       ctx.fillRect(x, y, cell, cell);
+      // 调淡的格子**不印色号**。每一格都印着字，满屏灰字比颜色本身更抢眼，
+      // 想找的那几格反而淹在里面。选中之后只有它们带字，一眼就找得到。
+      if (dim) continue;
       ctx.fillStyle = inkOn(it.hex);
       ctx.font = `${font}px system-ui, sans-serif`;
       ctx.fillText(it.code, x + cell / 2, y + cell / 2);
-      ctx.globalAlpha = 1;
     }
   }
 
@@ -238,7 +275,7 @@ export function drawSheet(
   legend.forEach((e, i) => {
     const x = 8 + (i % legendCols) * LEGEND_W;
     const y = legendTop + Math.floor(i / legendCols) * LEGEND_H;
-    ctx.globalAlpha = focus && !focus.has(e.code) ? DIM : 1;
+    ctx.globalAlpha = focus && !focus.has(e.code) ? DIM_LEGEND : 1;
     ctx.fillStyle = `#${e.hex}`;
     ctx.fillRect(x, y, 30, 30);
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
