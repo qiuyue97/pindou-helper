@@ -254,6 +254,23 @@ function CellPane({
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const { cols } = sheet;
 
+  // 按住拖选。单击某格照旧是勾/取消；按住往外拖，把落点之间的格子**按阅读顺序**
+  // 一整段处理（换行自动接下一行行首）。方向由起手那格决定：起手那格没选中就
+  // 整段选上，起手那格已选中就整段取消——和文件管理器框选一个套路。移动端同理，
+  // 所以拖选层要 touch-action: none，不然一拖变成滚页面。
+  const anchor = useRef<number | null>(null);
+  const mode = useRef<'add' | 'remove'>('add');
+  const moved = useRef(false);
+  const suppressClick = useRef(false);
+  const [dragSet, setDragSet] = useState<Set<number> | null>(null);
+
+  /** 事件当前压在哪一格上。不捕获指针，所以 pointermove 的 target 就是指针下的
+   *  那个格子（拖过谁就是谁），不用 elementFromPoint。 */
+  function flatOf(e: React.PointerEvent): number | null {
+    const hit = (e.target as HTMLElement).closest?.('[data-flat]') as HTMLElement | null;
+    return hit ? Number(hit.dataset.flat) : null;
+  }
+
   // 这个色号名下的全部格子。含逐格覆盖进来的——它们没有类，但确实归这个色号。
   const cells = useMemo(
     () => (row.code === BLANK_CODE ? blankCells(sheet) : codeCells(sheet, row.code)),
@@ -314,6 +331,52 @@ function CellPane({
     });
   }, [img, pageCells, sheet.rect, sheet.rows, sheet.cols, cols, gridRows]);
 
+  function onPointerDown(e: React.PointerEvent) {
+    const flat = flatOf(e);
+    if (flat === null) return;
+    anchor.current = flat;
+    mode.current = picked.has(flat) ? 'remove' : 'add';
+    moved.current = false;
+  }
+
+  function onPointerMove(e: React.PointerEvent) {
+    if (anchor.current === null) return;
+    const flat = flatOf(e);
+    if (flat === null) return;
+    const ai = pageCells.indexOf(anchor.current);
+    const bi = pageCells.indexOf(flat);
+    if (ai < 0 || bi < 0) return;
+    if (bi !== ai) moved.current = true;
+    const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+    setDragSet(new Set(pageCells.slice(lo, hi + 1)));
+  }
+
+  function onPointerUp() {
+    if (moved.current && dragSet) {
+      setPicked((s) => {
+        const next = new Set(s);
+        for (const flat of dragSet) {
+          if (mode.current === 'add') next.add(flat);
+          else next.delete(flat);
+        }
+        return next;
+      });
+      suppressClick.current = true; // 拖完手指抬起还会补一个 click，别让它翻掉最后那格
+    }
+    anchor.current = null;
+    moved.current = false;
+    setDragSet(null);
+  }
+
+  // 拖动预览：起手是「选」就把这一段并上去，是「取消」就把这一段挖掉。
+  let sel = picked;
+  if (dragSet) {
+    sel = new Set(picked);
+    for (const flat of dragSet) {
+      if (mode.current === 'add') sel.add(flat);
+      else sel.delete(flat);
+    }
+  }
   const list = [...picked].sort((a, b) => a - b);
 
   return (
@@ -340,20 +403,35 @@ function CellPane({
           height={gridRows * TILE}
           style={{ maxWidth: '100%', touchAction: 'manipulation' }}
         />
+        {/* biome-ignore lint/a11y/useKeyboardEvents: 每格里有真的 checkbox 走键盘，
+            这一层只是叠加的拖选手势 */}
         <div
           className="cell-hits"
           style={{
             gridTemplateColumns: `repeat(${PER_ROW}, 1fr)`,
             gridTemplateRows: `repeat(${gridRows}, 1fr)`,
+            touchAction: 'none',
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onClickCapture={(e) => {
+            if (suppressClick.current) {
+              e.stopPropagation();
+              e.preventDefault();
+              suppressClick.current = false;
+            }
           }}
         >
           {pageCells.map((flat) => {
             const r = Math.floor(flat / cols);
             const c = flat % cols;
-            const on = picked.has(flat);
+            const on = sel.has(flat);
             return (
               <span
                 key={flat}
+                data-flat={flat}
                 className={`cell-hit${on ? ' picked' : ''}`}
               >
                 <input

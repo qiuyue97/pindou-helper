@@ -58,7 +58,7 @@ function setup(sheet: Sheet = makeSheet()) {
   const onRecode = vi.fn();
   const onPatchPrior = vi.fn();
   const onPatchCells = vi.fn();
-  render(
+  const view = render(
     <SheetReview
       sheet={sheet}
       onRecode={onRecode}
@@ -66,7 +66,7 @@ function setup(sheet: Sheet = makeSheet()) {
       onPatchCells={onPatchCells}
     />,
   );
-  return { onRecode, onPatchPrior, onPatchCells };
+  return { onRecode, onPatchPrior, onPatchCells, ...view };
 }
 
 /**
@@ -404,4 +404,63 @@ it('有空格的图纸上，改豆点可以改成空白格', () => {
   fireEvent.focus(screen.getByRole('combobox'));
   fireEvent.click(screen.getByRole('option', { name: '空白格' }));
   expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 0, code: '-' }]);
+});
+
+// ---------- 按住拖选 ----------
+
+it('按住往外拖，落点之间的豆点按阅读顺序连选，跨行自动接上', () => {
+  const { container, onPatchCells } = setup();
+  // 默认 H15：flat 0,1,4,5,8,9,12,13（4 列）。从 0 拖到 8。
+  const a = container.querySelector('[data-flat="0"]')!;
+  const b = container.querySelector('[data-flat="8"]')!;
+  fireEvent.pointerDown(a);
+  fireEvent.pointerMove(b);
+  fireEvent.pointerUp(b);
+
+  // pageCells 里 0..8 之间是 [0,1,4,5,8] —— 跨了第 0/1/2 行
+  expect(screen.getByText(/已选 5 个/)).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'M3' } });
+  fireEvent.click(screen.getByRole('option', { name: 'M3' }));
+  expect(onPatchCells).toHaveBeenCalledWith([
+    { r: 0, c: 0, code: 'M3' },
+    { r: 0, c: 1, code: 'M3' },
+    { r: 1, c: 0, code: 'M3' },
+    { r: 1, c: 1, code: 'M3' },
+    { r: 2, c: 0, code: 'M3' },
+  ]);
+});
+
+it('只按一下不拖，还是单个勾选', () => {
+  const { container } = setup();
+  const a = container.querySelector('[data-flat="0"]')!;
+  fireEvent.pointerDown(a);
+  fireEvent.pointerUp(a);
+  // 没拖动 -> 不进选区；单击交给格子里的 checkbox
+  expect(screen.queryByText(/已选/)).toBeNull();
+});
+
+it('反向拖也是同一段', () => {
+  const { container } = setup();
+  const a = container.querySelector('[data-flat="8"]')!;
+  const b = container.querySelector('[data-flat="0"]')!;
+  fireEvent.pointerDown(a);
+  fireEvent.pointerMove(b);
+  fireEvent.pointerUp(b);
+  expect(screen.getByText(/已选 5 个/)).toBeInTheDocument();
+});
+
+it('起手在已选的格子上，拖动是整段取消', () => {
+  const { container } = setup();
+  // 先勾上 flat 0 和 1
+  fireEvent.click(screen.getByRole('checkbox', { name: '第 1 行第 1 列' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: '第 1 行第 2 列' }));
+  expect(screen.getByText(/已选 2 个/)).toBeInTheDocument();
+
+  // 从已选的 flat 0 拖到 flat 1 -> 整段取消
+  const a = container.querySelector('[data-flat="0"]')!;
+  const b = container.querySelector('[data-flat="1"]')!;
+  fireEvent.pointerDown(a);
+  fireEvent.pointerMove(b);
+  fireEvent.pointerUp(b);
+  expect(screen.queryByText(/已选/)).toBeNull();
 });

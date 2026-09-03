@@ -635,6 +635,25 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
+/* 预览缩放：重画放大，不是 CSS 拉伸，所以怎么放都清晰。 */
+.preview-zoom {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 0.82rem;
+  color: #666;
+}
+.preview-zoom span {
+  font-variant-numeric: tabular-nums;
+}
+/* 放大后画布比容器宽，这里滚动来平移。 */
+.preview-scroll {
+  max-height: 80vh;
+  overflow: auto;
+  border-radius: 4px;
+}
+
 /* 按色号突出显示：选中的照常画，其余的调低透明度。 */
 .focus-bar {
   display: flex;

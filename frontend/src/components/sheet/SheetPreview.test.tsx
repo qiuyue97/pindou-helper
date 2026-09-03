@@ -118,3 +118,43 @@ it('没选任何色号时不显示「全部显示」', () => {
   render(<SheetPreview sheet={makeSheet()} />);
   expect(screen.queryByRole('button', { name: '全部显示' })).toBeNull();
 });
+
+// ---------- 缩放（滚轮 / 双指，没有 +/- 按钮）----------
+
+it('没有 +/- 按钮', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  expect(screen.queryByRole('button', { name: '放大' })).toBeNull();
+  expect(screen.queryByRole('button', { name: '缩小' })).toBeNull();
+});
+
+it('滚轮向上是放大，且是重画不是 CSS 拉伸——canvas 像素数跟着涨', () => {
+  const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const canvas = container.querySelector('canvas')!;
+  const scroll = container.querySelector('.preview-scroll')!;
+  const w1 = canvas.width;
+
+  fireEvent.wheel(scroll, { deltaY: -240 });
+  expect(canvas.width).toBeGreaterThan(w1);
+  // 放大后按原始像素显示，不被 CSS 缩回去
+  expect(canvas.style.maxWidth).toBe('none');
+});
+
+it('滚轮向下缩不到 1 倍以下', () => {
+  const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const canvas = container.querySelector('canvas')!;
+  const scroll = container.querySelector('.preview-scroll')!;
+  const w1 = canvas.width;
+
+  fireEvent.wheel(scroll, { deltaY: 1000 });
+  fireEvent.wheel(scroll, { deltaY: 1000 });
+  expect(canvas.width).toBe(w1);
+  expect(canvas.style.maxWidth).toBe('100%');
+});
+
+it('复位回到 1 倍', () => {
+  const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const scroll = container.querySelector('.preview-scroll')!;
+  fireEvent.wheel(scroll, { deltaY: -240 });
+  fireEvent.click(screen.getByRole('button', { name: '复位' }));
+  expect(screen.getByText('滚轮或双指缩放')).toBeInTheDocument();
+});
