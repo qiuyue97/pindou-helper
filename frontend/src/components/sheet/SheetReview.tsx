@@ -18,8 +18,8 @@ export interface CellPatch {
 
 export interface SheetReviewProps {
   sheet: Sheet;
-  /** 改整类：把这些类的色号都换掉，名下全部格子跟着变 */
-  onPatchClasses: (patches: Array<{ k: number; code: string }>) => void;
+  /** 整体改色号：这个色号名下的格子全部跟着变（含手工挪进来的） */
+  onRecode: (code: string, to: string) => void;
   /** 改图纸数量：只动先验，不动格子 */
   onPatchPrior: (prior: Record<string, number>) => void;
   /** 改单个/多个豆点 */
@@ -31,14 +31,14 @@ export interface SheetReviewProps {
  *
  * 左右两侧改的是**不同的东西**，但放在同一个界面里，因为用户看的是同一件事：
  *
- *   左边改色号 -> 这个色号名下**所有**豆点跟着改
+ *   左边改色号 -> 这个色号名下**所有**豆点跟着改（含手工挪进来的那些）
  *   左边改数量 -> 只改「图纸说有多少」，不动任何豆点
  *   右边改豆点 -> 那几个豆点移出当前色号，进入目标色号；目标色号图例里没有的话
  *                 自动新开一条，标绿（那是用户确认过的，不是错误）
  */
 export default function SheetReview({
   sheet,
-  onPatchClasses,
+  onRecode,
   onPatchPrior,
   onPatchCells,
 }: SheetReviewProps) {
@@ -54,7 +54,7 @@ export default function SheetReview({
         hasPrior={Object.keys(sheet.prior).length > 0}
         palette={sheet.palette}
         onSelect={setActive}
-        onRename={(row, code) => onPatchClasses(row.classes.map((k) => ({ k, code })))}
+        onRename={(row, code) => onRecode(row.code, code)}
         onCount={(row, n) => {
           const next = { ...sheet.prior };
           if (n && n > 0) next[row.code] = n;
@@ -142,7 +142,6 @@ function CodeColumn({
                   type="button"
                   className="linklike"
                   aria-label={`改色号 ${row.code}`}
-                  disabled={row.classes.length === 0}
                   onClick={() => setEditing(row.code)}
                 >
                   改色号
@@ -294,12 +293,12 @@ function CellPane({
           {pageCells.map((flat) => {
             const r = Math.floor(flat / cols);
             const c = flat % cols;
-            const over = sheet.overrides[`${r},${c}`];
+            const edited = sheet.overrides[`${r},${c}`] !== undefined;
             const on = picked.has(flat);
             return (
               <span
                 key={flat}
-                className={`cell-hit${over ? ' edited' : ''}${on ? ' picked' : ''}`}
+                className={`cell-hit${edited ? ' edited' : ''}${on ? ' picked' : ''}`}
               >
                 <input
                   type="checkbox"
@@ -314,16 +313,6 @@ function CellPane({
                     })
                   }
                 />
-                {over && (
-                  <button
-                    type="button"
-                    className="ghost undo"
-                    aria-label={`撤销第 ${r + 1} 行第 ${c + 1} 列`}
-                    onClick={() => onPatchCells([{ r, c, code: '' }])}
-                  >
-                    ↺
-                  </button>
-                )}
               </span>
             );
           })}

@@ -79,6 +79,24 @@ def apply_class_patch(classes: list[dict], patches) -> list[dict]:
     return out
 
 
+def apply_recode(classes: list[dict], overrides: dict,
+                 code: str, to: str) -> tuple[list[dict], dict]:
+    """把色号 `code` 整体改成 `to`：所有读作它的类，加上所有指向它的逐格覆盖。
+
+    只改类是不够的。一个色号名下的格子有两个来源——类，和用户逐格改过来的覆盖。
+    漏掉后者的话，把 C18 改成 C20 之后，那几个手工挪进 C18 的豆点会继续显示成
+    C18，界面上凭空多出一个谁都没要的色号。而当这一行**只有**覆盖、没有类时
+    （图例里有、但一个都没识别出来的色号就是这样），只改类等于什么都没做。
+    """
+    code, to = code.strip().upper(), to.strip().upper()
+    out = [dict(c) for c in classes]
+    for c in out:
+        if c["code"] == code:
+            c["code"] = to
+    moved = {k: (to if v == code else v) for k, v in overrides.items()}
+    return out, moved
+
+
 def apply_cell_patch(overrides: dict, patches, rows: int, cols: int) -> dict:
     """改某几格。`code` 为空表示撤销这一格的人工修正，回到它所属类的色号。"""
     out = dict(overrides)

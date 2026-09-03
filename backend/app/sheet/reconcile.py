@@ -11,7 +11,7 @@
 
 from dataclasses import dataclass, field
 
-from app.sheet.decide import RANK, ClassRecord
+from app.sheet.decide import RANK, ClassRecord, intrinsic_level
 from app.text_parse import code_key
 
 
@@ -38,7 +38,10 @@ def reconcile(records: list[ClassRecord], prior: dict | None,
               counted: dict[str, int] | None = None) -> list[CountRow]:
     """按色号汇总，并把对不上的色号整体提级到 `count`。
 
-    **就地修改** `records` 的 level（只升不降），同时返回对账表的行。
+    **就地修改** `records` 的 level，同时返回对账表的行。每一类的级别都先回到
+    `intrinsic_level`（它自己的证据），再按这一次的数量重新决定要不要提到
+    `count`。不这样做的话 `count` 只进不出：用户把数量改对了，红色感叹号还在，
+    因为下一次对账读的是上一次写进去的 `count`。
 
     `counted` 是逐格覆盖之后的真实格子数（`matrix.tally` 算的）。不给的话按类的
     格子数算——那是识别刚结束、还没有人工修改时的情形。给了就以它为准：用户改过
@@ -66,6 +69,9 @@ def reconcile(records: list[ClassRecord], prior: dict | None,
             classes=[r.klass for r in group],
             custom=bool(prior) and code not in prior,
         )
+        # 每一类先回到它自己的级别——上一轮对账打的 count 不能留到这一轮
+        for r in group:
+            r.level = intrinsic_level(r)
         # 该色号名下最严重的那个类的级别代表这一行
         row.level = max((r.level for r in group), key=lambda x: RANK[x],
                         default="ok")
@@ -77,4 +83,12 @@ def reconcile(records: list[ClassRecord], prior: dict | None,
                 if RANK["count"] > RANK[r.level]:
                     r.level = "count"
         rows.append(row)
+    # 数量对不上的排在前面，两组各自按色号顺序（A2 在 A10 前）。用户是照着这一栏
+    # 逐个核对的，要看的东西必须在最上面，不该在几十行里翻。
+    #
+    # 判据用的是 count，不是「level 不为 ok」。左栏只标两样东西：数量对不上（红色
+    # 感叹号）和用户自建（绿色勾）——warn/guess 在这一栏里根本没有标记，真实图纸上
+    # 又几乎每一类都够得上 warn（印刷色和目录色差 5 个 dE00 太常见）。按看不见的
+    # 属性排序，用户只会看到顺序莫名其妙地变了。
+    rows.sort(key=lambda r: (r.level != "count", code_key(r.code)))
     return rows

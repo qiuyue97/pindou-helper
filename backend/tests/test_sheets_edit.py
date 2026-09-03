@@ -12,6 +12,9 @@ import io
 import pytest
 from PIL import Image
 
+from app.db import get_sessionmaker
+from app.models import Sheet
+from app.text_parse import code_key
 from tests.conftest import XRW
 from tests.sheet.synth import make_random_sheet
 from tests.test_sheets_api import _upload, vip  # noqa: F401
@@ -160,3 +163,106 @@ def test_editing_someone_elses_sheet_is_a_404(vip, done):  # noqa: F811
     _set_vip("other")
     assert _patch(vip, sid, "cells",
                   {"patches": [{"r": 0, "c": 0, "code": "M3"}]}).status_code == 404
+
+
+# ---------- 对账是推导出来的 ----------
+
+def test_a_stale_count_flag_is_recomputed_on_read(vip, done):  # noqa: F811
+    """库里留着的「数量对不上」不是权威，取图纸时重算。
+
+    早先的版本把 count 写进类的 level，而下一次对账取的是「已有 level 和 count
+    的最大值」——于是它只进不出：用户把图纸数量改成和已识别数量一样，红色感叹号
+    还挂在那儿。这类记录现在还在库里，读的时候就得算掉。
+    """
+    sid, d = done
+    code = d["counts"][0]["code"]
+
+    # 伪造一条脏记录：数量明明对得上，却存着 count
+    with get_sessionmaker()() as session:
+        sheet = session.get(Sheet, sid)
+        sheet.prior = {r["code"]: r["sheet"] for r in sheet.counts}
+        sheet.counts = [{**r, "level": "count"} for r in sheet.counts]
+        sheet.classes = [{**c, "level": "count"} for c in sheet.classes]
+        session.commit()
+
+    got = vip.get(f"/api/sheets/{sid}").json()
+    by = {r["code"]: r for r in got["counts"]}
+    assert by[code]["prior"] == by[code]["sheet"]
+    assert by[code]["level"] != "count", "数量对上了就不该再标"
+    assert all(c["level"] != "count" for c in got["classes"])
+
+
+def test_problem_rows_are_listed_first(vip, done):  # noqa: F811
+    """有问题的排上面，两组各自按色号顺序。
+
+    识别在测试里走的是颜色兜底（没有 MinerU token），所有类都是 guess、全都算
+    有问题。先把它们改成正常的 OCR 结果，才有「有问题的」和「没问题的」之分。
+    """
+    sid, d = done
+    codes = sorted((r["code"] for r in d["counts"]), key=code_key)
+    with get_sessionmaker()() as session:
+        sheet = session.get(Sheet, sid)
+        sheet.classes = [{**c, "source": "ocr", "de": 0.5, "off_list": False,
+                          "dup": None} for c in sheet.classes]
+        prior = {r["code"]: r["sheet"] for r in sheet.counts}
+        prior[codes[-1]] += 7         # 让**排最后**的那个色号数量对不上
+        sheet.prior = prior
+        session.commit()
+
+    got = vip.get(f"/api/sheets/{sid}").json()["counts"]
+    assert [r["level"] for r in got].count("count") == 1
+    # 按色号排它在最后，但它有问题，所以要顶到第一行
+    assert got[0]["code"] == codes[-1] and got[0]["level"] == "count"
+    rest = [r["code"] for r in got[1:]]
+    assert rest == sorted(rest, key=code_key)
+    assert all(r["level"] == "ok" for r in got[1:])
+
+
+# ---------- 整体改色号（按色号，不按类） ----------
+
+def test_recode_moves_classes_and_hand_edited_cells_together(vip, done):  # noqa: F811
+    """把 C18 改成 M3：类名下的格子和手工挪进来的格子都要跟着走。
+
+    只改类的话，那几个手工挪进 C18 的豆点会继续显示成 C18——界面上凭空多出一个
+    谁都没要的色号。
+    """
+    sid, d = done
+    code = d["counts"][0]["code"]
+    other = next(r["code"] for r in d["counts"] if r["code"] != code)
+    n_before = d["tally"][code]
+
+    # 从另一个色号手工挪一格进来
+    k = next(c for c in d["classes"] if c["code"] == other)
+    flat = k["cells"][0]
+    r0, c0 = divmod(flat, d["cols"])
+    moved = _patch(vip, sid, "cells", {"patches": [{"r": r0, "c": c0, "code": code}]})
+    assert moved.json()["tally"][code] == n_before + 1
+
+    got = _patch(vip, sid, "recode", {"code": code, "to": "M3"})
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert code not in body["tally"], "旧色号不该还剩下格子"
+    assert body["tally"]["M3"] == n_before + 1
+    assert all(c["code"] != code for c in body["classes"])
+
+
+def test_recode_works_for_a_code_that_has_no_class_at_all(vip, done):  # noqa: F811
+    """图例里有、一个都没识别出来的色号：用户逐格挪了豆点进去之后也要能整体改。
+
+    这一行名下全是逐格覆盖，一个类都没有。按类改的话它根本改不动——界面上表现为
+    「改色号」按钮一直是灰的。
+    """
+    sid, d = done
+    k = d["classes"][0]
+    r0, c0 = divmod(k["cells"][0], d["cols"])
+    _patch(vip, sid, "cells", {"patches": [{"r": r0, "c": c0, "code": "M3"}]})
+
+    body = _patch(vip, sid, "recode", {"code": "M3", "to": "B8"}).json()
+    assert "M3" not in body["tally"]
+    assert body["tally"]["B8"] == 1
+
+
+def test_recode_rejects_a_code_outside_the_palette(vip, done):  # noqa: F811
+    sid, d = done
+    r = _patch(vip, sid, "recode", {"code": d["counts"][0]["code"], "to": "ZZ9"})
+    assert r.status_code == 422

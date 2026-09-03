@@ -25,6 +25,24 @@ LEVELS = ("ok", "warn", "count", "guess")
 RANK = {"ok": 0, "warn": 1, "count": 2, "guess": 3}
 
 
+def intrinsic_level(rec: "ClassRecord", warn: float = WARN_DE) -> str:
+    """这一类**自己**的级别：只看它自身的证据，不看对账。
+
+    `count` 不在这里出现。它是对账推出来的、属于**色号**的状态，不是类的属性：
+    一旦写进类的 level 里就再也摘不掉——用户把数量改对了，红色感叹号还挂在那儿，
+    因为下一次对账取的是「已有 level 和 count 的最大值」。所以每次对账都从这个
+    函数重新起算。
+
+    规则和 `decide` 里定级那几行是同一套，只是改成从落库的字段反推——它们全都
+    与对账无关，不会被对账污染。
+    """
+    if rec.source == "guess":
+        return "guess"
+    if rec.de > warn or rec.off_list or rec.dup is not None:
+        return "warn"
+    return "ok"
+
+
 @dataclass
 class ClassRecord:
     klass: int

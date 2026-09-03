@@ -55,18 +55,18 @@ function makeSheet(over: Partial<Sheet> = {}): Sheet {
 }
 
 function setup(sheet: Sheet = makeSheet()) {
-  const onPatchClasses = vi.fn();
+  const onRecode = vi.fn();
   const onPatchPrior = vi.fn();
   const onPatchCells = vi.fn();
   render(
     <SheetReview
       sheet={sheet}
-      onPatchClasses={onPatchClasses}
+      onRecode={onRecode}
       onPatchPrior={onPatchPrior}
       onPatchCells={onPatchCells}
     />,
   );
-  return { onPatchClasses, onPatchPrior, onPatchCells };
+  return { onRecode, onPatchPrior, onPatchCells };
 }
 
 /**
@@ -119,7 +119,7 @@ it('已识别数量不可编辑——数出来的事实', () => {
   expect(screen.getByLabelText('H15 的图纸数量')).toBeInTheDocument();
 });
 
-it('改色号会把名下所有类都带上', () => {
+it('改色号是按色号改的，不是按类——落在几个类上也好，一个类都没有也好', () => {
   const s = makeSheet({
     classes: [
       cls({ klass: 0, code: 'H15', cells: [0, 1] }),
@@ -127,14 +127,11 @@ it('改色号会把名下所有类都带上', () => {
     ],
     counts: [row({ code: 'H15', sheet: 4, prior: 4, classes: [0, 2] })],
   });
-  const { onPatchClasses } = setup(s);
+  const { onRecode } = setup(s);
   fireEvent.click(screen.getByRole('button', { name: '改色号 H15' }));
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'B8' } });
   fireEvent.click(screen.getByRole('option', { name: 'B8' }));
-  expect(onPatchClasses).toHaveBeenCalledWith([
-    { k: 0, code: 'B8' },
-    { k: 2, code: 'B8' },
-  ]);
+  expect(onRecode).toHaveBeenCalledWith('H15', 'B8');
 });
 
 it('改图纸数量只动先验，不发豆点的改动', () => {
@@ -154,7 +151,7 @@ it('数量对不上的着重标记，带感叹号', () => {
     ],
   });
   const { container } = render(
-    <SheetReview sheet={s} onPatchClasses={vi.fn()} onPatchPrior={vi.fn()} onPatchCells={vi.fn()} />,
+    <SheetReview sheet={s} onRecode={vi.fn()} onPatchPrior={vi.fn()} onPatchCells={vi.fn()} />,
   );
   const flag = container.querySelector('.flag.mismatch');
   expect(flag).toHaveTextContent('!');
@@ -169,7 +166,7 @@ it('用户自建的色号只给绿色标识，不算告警', () => {
     ],
   });
   const { container } = render(
-    <SheetReview sheet={s} onPatchClasses={vi.fn()} onPatchPrior={vi.fn()} onPatchCells={vi.fn()} />,
+    <SheetReview sheet={s} onRecode={vi.fn()} onPatchPrior={vi.fn()} onPatchCells={vi.fn()} />,
   );
   expect(container.querySelector('.flag.custom')).toBeInTheDocument();
   expect(container.querySelector('.flag.mismatch')).toBeNull();
@@ -185,12 +182,20 @@ it('没有先验时不显示图纸数量，也不谈对不上', () => {
   expect(screen.getByText('已识别数量')).toBeInTheDocument();
 });
 
-it('没有任何类的色号改不了色号——它只是图例上的一条', () => {
+it('一个类都没有的色号照样能改——名下可能全是手工挪进来的豆点', () => {
+  // 图例里有、一个都没识别出来的色号就是这样：用户把豆点逐格挪进去之后，它名下
+  // 全是逐格覆盖，一个类也没有。之前这里的按钮是灰的，等于改不动。
   const s = makeSheet({
-    counts: [row({ code: 'H15', sheet: 0, prior: 3, classes: [], level: 'count' })],
+    counts: [row({ code: 'H15', sheet: 2, prior: 3, classes: [], level: 'count' })],
+    overrides: { '0,0': 'H15', '0,1': 'H15' },
   });
-  setup(s);
-  expect(screen.getByRole('button', { name: '改色号 H15' })).toBeDisabled();
+  const { onRecode } = setup(s);
+  const btn = screen.getByRole('button', { name: '改色号 H15' });
+  expect(btn).toBeEnabled();
+  fireEvent.click(btn);
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'B8' } });
+  fireEvent.click(screen.getByRole('option', { name: 'B8' }));
+  expect(onRecode).toHaveBeenCalledWith('H15', 'B8');
 });
 
 // ---------- 右侧 ----------
@@ -256,10 +261,18 @@ it('改进来的豆点出现在目标色号下', () => {
   expect(screen.getByText('共 1 个豆点')).toBeInTheDocument();
 });
 
-it('人工改过的豆点标出来并能撤销', () => {
-  const { onPatchCells } = setup(makeSheet({ overrides: { '0,1': 'H15' } }));
-  fireEvent.click(screen.getByRole('button', { name: /撤销第 1 行第 2 列/ }));
-  expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 1, code: '' }]);
+it('人工改过的豆点标出来，但不给回退按钮', () => {
+  const { container } = render(
+    <SheetReview
+      sheet={makeSheet({ overrides: { '0,1': 'H15' } })}
+      onRecode={vi.fn()}
+      onPatchPrior={vi.fn()}
+      onPatchCells={vi.fn()}
+    />,
+  );
+  expect(container.querySelectorAll('.cell-hit.edited')).toHaveLength(1);
+  // 要改回去就再改一次色号，不需要一个专门的撤销按钮堆在格子上
+  expect(screen.queryByRole('button', { name: /撤销/ })).toBeNull();
 });
 
 it('一页 50 个，多了分页', () => {
@@ -270,7 +283,7 @@ it('一页 50 个，多了分页', () => {
     counts: [row({ code: 'H15', sheet: 120, prior: 120, classes: [0] })],
   });
   const { container } = render(
-    <SheetReview sheet={s} onPatchClasses={vi.fn()} onPatchPrior={vi.fn()} onPatchCells={vi.fn()} />,
+    <SheetReview sheet={s} onRecode={vi.fn()} onPatchPrior={vi.fn()} onPatchCells={vi.fn()} />,
   );
   expect(container.querySelectorAll('.cell-hit')).toHaveLength(50);
   expect(screen.getByText(/第 1 \/ 3 页/)).toBeInTheDocument();

@@ -524,15 +524,6 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   outline-offset: -2px;
   pointer-events: none;
 }
-.cell-hit .undo {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  padding: 0 2px;
-  font-size: 11px;
-  line-height: 1;
-}
-
 .cell-pager,
 .cell-actions {
   display: flex;

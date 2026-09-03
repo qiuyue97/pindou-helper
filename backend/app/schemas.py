@@ -356,6 +356,18 @@ class CellPatchIn(BaseModel):
     patches: list[CellPatch] = Field(min_length=1)
 
 
+class RecodeIn(BaseModel):
+    """把一个色号整体改成另一个。
+
+    左栏一行代表的是**一个色号**，不是一个颜色类：同一个色号常常落在两三个类上，
+    而且用户逐格改过来的豆点根本不属于任何类。所以整体改色号必须按色号来，把这
+    两边一起改掉。
+    """
+
+    code: str
+    to: str
+
+
 class PriorIn(BaseModel):
     """AI 抽取的图例，用户改过的版本。数量为 0 表示删掉这一行。"""
 

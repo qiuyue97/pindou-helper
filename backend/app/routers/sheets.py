@@ -32,6 +32,7 @@ from app.schemas import (
     CellPatchIn,
     ClassPatchIn,
     PriorIn,
+    RecodeIn,
     RecogniseIn,
     SheetGuessOut,
     SheetOut,
@@ -39,7 +40,7 @@ from app.schemas import (
 )
 from app.sheet import pipeline
 from app.sheet.decide import ClassRecord
-from app.sheet.matrix import apply_cell_patch, apply_class_patch, tally
+from app.sheet.matrix import apply_cell_patch, apply_class_patch, apply_recode, tally
 from app.sheet.reconcile import reconcile
 from app.text_parse import parse_lines
 
@@ -274,7 +275,17 @@ def start_recognise(
 @router.get("/sheets/{sheet_id}", response_model=SheetOut)
 def get_sheet(sheet_id: int, user: User = Depends(require_vip),
               session: Session = Depends(get_session)) -> SheetOut:
-    return _row(_own(sheet_id, user, session))
+    """取一张图纸。已完成的顺手重算一遍对账再返回。
+
+    对账表是**推导出来的**（classes + overrides + prior 一算就有），存下来只是
+    为了省一次计算。既然是推导的，就没有理由把上一次算的结果当权威——早先有个
+    版本会把「数量对不上」写进类里而且摘不掉，那些记录现在还躺在库里。重算一遍，
+    显示的东西才和存着的输入始终一致。不写库：编辑那条路会写。
+    """
+    sheet = _own(sheet_id, user, session)
+    if sheet.status == "done":
+        _recount(sheet)
+    return _row(sheet)
 
 
 @router.get("/sheets", response_model=SheetSummary)
@@ -374,6 +385,23 @@ def patch_classes(sheet_id: int, body: ClassPatchIn,
             sheet.classes or [], [p.model_dump() for p in body.patches])
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
+    return _edited(sheet, session)
+
+
+@router.patch("/sheets/{sheet_id}/recode", response_model=SheetOut)
+def patch_recode(sheet_id: int, body: RecodeIn,
+                 user: User = Depends(require_vip),
+                 session: Session = Depends(get_session)) -> SheetOut:
+    """把一个色号整体改成另一个。左栏那一行的「改色号」走这里。
+
+    按**色号**改，不是按类改：一个色号可能落在几个类上，也可能一个类都没有——
+    图例里写着、但一个都没识别出来的色号，用户把豆点逐个挪进去之后，它名下就
+    全是逐格覆盖。按类改的话这种行根本改不动。
+    """
+    sheet = _own(sheet_id, user, session)
+    _check_codes([body.to], sheet.palette)
+    sheet.classes, sheet.overrides = apply_recode(
+        sheet.classes or [], sheet.overrides or {}, body.code, body.to)
     return _edited(sheet, session)
 
 

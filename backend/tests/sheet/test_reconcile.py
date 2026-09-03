@@ -12,7 +12,16 @@ from app.sheet.reconcile import reconcile
 
 
 def _rec(k, code, n, level="ok"):
-    return ClassRecord(klass=k, code=code, source="ocr", level=level, de=0.5,
+    """造一条**自洽**的类记录。
+
+    level 必须和它的依据对得上：真实数据里 guess 一定是颜色兜底来的
+    （source="guess"），warn 一定有个说得出的理由（这里用 de 超阈值）。对账现在
+    会从这些字段反推固有级别，喂给它一条「source=ocr 但 level=guess」的记录，
+    测的就不是真实存在的情形了。
+    """
+    return ClassRecord(klass=k, code=code,
+                       source="guess" if level == "guess" else "ocr",
+                       level=level, de=9.0 if level == "warn" else 0.5,
                        n=n, radius=1.0, rgb=[1, 2, 3], nearest=code,
                        nearest_de=0.5, read_full=code, off_list=False)
 
@@ -125,3 +134,63 @@ def test_rows_are_sorted_by_code_order():
     recs = [_rec(0, "A10", 1), _rec(1, "A2", 1), _rec(2, "B1", 1)]
     rows = reconcile(recs, None)
     assert [r.code for r in rows] == ["A2", "A10", "B1"]
+
+
+# ---------- count 是算出来的，不是留下来的 ----------
+
+def test_a_resolved_mismatch_clears_the_flag():
+    """用户把数量改对了，红色感叹号就得消失。
+
+    这是真踩过的 bug：count 被写进类的 level，下一次对账取「已有 level 和 count
+    的最大值」，于是 count 只进不出——图纸数量 87、已识别数量 87，感叹号还挂着。
+    """
+    recs = [_rec(0, "C19", 129)]
+    assert reconcile(recs, {"C19": 87})[0].level == "count"
+    assert recs[0].level == "count"
+
+    # 同一批 records 再对一次账，这次数量对上了
+    rows = reconcile(recs, {"C19": 87}, counted={"C19": 87})
+    assert rows[0].level == "ok"
+    assert recs[0].level == "ok", "类身上那个 count 也要摘掉"
+
+
+def test_clearing_count_does_not_erase_the_class_own_warning():
+    """摘掉 count 不能顺手把这一类自己的橙色告警也摘了。"""
+    recs = [_rec(0, "H15", 37)]
+    recs[0].de = 9.0                      # 颜色和读出的色号差得远 -> 固有 warn
+    reconcile(recs, {"H15": 34})
+    assert recs[0].level == "count"       # count 比 warn 重
+    rows = reconcile(recs, {"H15": 37})
+    assert rows[0].level == "warn"
+    assert recs[0].level == "warn"
+
+
+def test_warn_and_guess_do_not_jump_the_queue():
+    """左栏不标 warn/guess，就不能按它们排序——顺序会莫名其妙地变。"""
+    recs = [_rec(0, "Z9", 1), _rec(1, "A1", 1, level="warn"), _rec(2, "B2", 1, level="guess")]
+    rows = reconcile(recs, {"Z9": 5, "A1": 1, "B2": 1})
+    assert [r.code for r in rows] == ["Z9", "A1", "B2"], "只有 Z9 数量对不上"
+
+
+def test_a_guess_stays_red_through_a_resolved_mismatch():
+    recs = [_rec(0, "H15", 37, level="guess")]
+    recs[0].source = "guess"
+    rows = reconcile(recs, {"H15": 37})
+    assert rows[0].level == "guess" and recs[0].level == "guess"
+
+
+# ---------- 排序 ----------
+
+def test_problem_rows_come_first_each_group_sorted_by_code():
+    """数量对不上的全部排在上面，两组各自 A-Z、1-99。"""
+    recs = [_rec(0, "A10", 1), _rec(1, "A2", 1), _rec(2, "B1", 1), _rec(3, "B20", 1)]
+    rows = reconcile(recs, {"A10": 1, "A2": 9, "B1": 1, "B20": 7})
+    assert [r.code for r in rows] == ["A2", "B20", "A10", "B1"]
+    assert [r.level for r in rows] == ["count", "count", "ok", "ok"]
+
+
+def test_a_custom_code_is_not_treated_as_a_problem():
+    """绿色的自建色号不该被顶到最上面——那不是问题，是用户自己确认过的。"""
+    rows = reconcile([_rec(0, "C6", 5), _rec(1, "H15", 3)], {"H15": 9})
+    assert [r.code for r in rows] == ["H15", "C6"]
+    assert rows[1].custom is True and rows[1].level == "ok"

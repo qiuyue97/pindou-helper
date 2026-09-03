@@ -113,7 +113,7 @@ export default function SheetPage() {
           </div>
           <SheetReview
             sheet={sheet}
-            onPatchClasses={(patches) => void patch('/classes', { patches })}
+            onRecode={(code, to) => void patch('/recode', { code, to })}
             onPatchPrior={(prior) => void patch('/prior', { prior })}
             onPatchCells={(patches) => void patch('/cells', { patches })}
           />
