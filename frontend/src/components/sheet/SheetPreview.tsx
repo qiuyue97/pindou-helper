@@ -22,7 +22,7 @@ const ZOOMED_VIEWPORT_H = '80vh';
  * layout，canvas 的像素数跟着涨，所以怎么放都清晰。
  *
  * 尺寸策略：
- *   - 预览框**冲破** .app 的 1100 宽，用到视口 ~94vw，图纸大格子够看清。
+ *   - 宽度跟着 .sheet-page 走（结果页统一比 .app 宽一点、居中），预览铺满它。
  *   - 只按宽度收（fit width），**高度随它去**——图纸长一点无所谓，1 倍时整张往下
  *     铺、页面正常滚。这样 canvas 永远自然像素、从不 CSS 缩放。
  *   - 放大后才把框钉成 80vh 的滚动取景框，滚轮 + 拖动都能平移。跨 1↔N 那一下
@@ -50,7 +50,7 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   );
   const legendLen = drawing.legend.length;
 
-  // 可用宽度：预览框自己的宽（它已经被 CSS 撑到 ~94vw）。
+  // 可用宽度：预览框自己的宽（= .sheet-page 的宽）。
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
