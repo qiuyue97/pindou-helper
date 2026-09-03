@@ -40,7 +40,14 @@ from app.schemas import (
 )
 from app.sheet import pipeline
 from app.sheet.decide import ClassRecord
-from app.sheet.matrix import apply_cell_patch, apply_class_patch, apply_recode, tally
+from app.sheet.matrix import (
+    BLANK,
+    apply_cell_patch,
+    apply_class_patch,
+    apply_recode,
+    blank_cells,
+    tally,
+)
 from app.sheet.reconcile import reconcile
 from app.text_parse import parse_lines
 
@@ -331,7 +338,8 @@ def _check_codes(codes, palette: str) -> None:
     到那时用户已经改了几十格。
     """
     valid = set(load_palette(palette).codes)
-    bad = sorted({c for c in codes if c and c not in valid})
+    # BLANK 不是色号，是「这一格就是空的」。它不在任何色卡里，也不该在。
+    bad = sorted({c for c in codes if c and c != BLANK and c not in valid})
     if bad:
         raise HTTPException(
             status_code=422,
@@ -400,8 +408,19 @@ def patch_recode(sheet_id: int, body: RecodeIn,
     """
     sheet = _own(sheet_id, user, session)
     _check_codes([body.to], sheet.palette)
-    sheet.classes, sheet.overrides = apply_recode(
-        sheet.classes or [], sheet.overrides or {}, body.code, body.to)
+    if body.code == BLANK:
+        # 空格没有类可改（检测出来的空格 label 是 -1，压根不属于任何类），
+        # 只能逐格写覆盖。
+        sheet.overrides = apply_cell_patch(
+            sheet.overrides or {},
+            [{"r": r, "c": c, "code": body.to}
+             for r, c in blank_cells(sheet.labels or [], sheet.classes or [],
+                                     sheet.overrides or {}, sheet.rows, sheet.cols)],
+            sheet.rows, sheet.cols,
+        )
+    else:
+        sheet.classes, sheet.overrides = apply_recode(
+            sheet.classes or [], sheet.overrides or {}, body.code, body.to)
     return _edited(sheet, session)
 
 

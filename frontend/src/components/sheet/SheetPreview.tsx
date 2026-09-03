@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Sheet } from '../../api/types';
 import { drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
 import { byCode } from '../../lib/sheetSort';
@@ -26,6 +26,8 @@ const PREVIEW_MAX_WIDTH = 1400;
 export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const { byCode: catalogue } = useEffectiveCatalog();
+  /** 选中的色号：只画这些，其余调淡。空 = 全部照常。 */
+  const [focus, setFocus] = useState<Set<string>>(new Set());
 
   const drawing = useMemo(
     () => sheetToDrawing(sheet, (code) => catalogue.get(code)?.hex, byCode),
@@ -47,17 +49,50 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
       cells: drawing.cells,
       legend: drawing.legend,
       layout: lay,
+      focus,
     });
-  }, [sheet.rows, sheet.cols, drawing, lay]);
+  }, [sheet.rows, sheet.cols, drawing, lay, focus]);
 
   if (!sheet.rows || !sheet.cols) return null;
   return (
-    <canvas
-      ref={ref}
-      aria-label="完整图纸"
-      width={lay.width}
-      height={lay.height}
-      style={{ maxWidth: '100%', height: 'auto', border: '1px solid rgba(0,0,0,0.15)' }}
-    />
+    <>
+      <canvas
+        ref={ref}
+        aria-label="完整图纸"
+        width={lay.width}
+        height={lay.height}
+        style={{ maxWidth: '100%', height: 'auto', border: '1px solid rgba(0,0,0,0.15)' }}
+      />
+      {/* 选几个色号突出显示。拼的时候是一个色号一个色号摆的，把它从满图里挑出来
+          看，比对着一张花图找要省眼睛得多。 */}
+      <div className="focus-bar" aria-label="突出显示色号">
+        {drawing.legend.map((e) => {
+          const on = focus.has(e.code);
+          return (
+            <button
+              key={e.code}
+              type="button"
+              className={`chip${on ? ' on' : ''}`}
+              aria-pressed={on}
+              onClick={() =>
+                setFocus((f) => {
+                  const next = new Set(f);
+                  if (!next.delete(e.code)) next.add(e.code);
+                  return next;
+                })
+              }
+            >
+              <span className="swatch" style={{ background: `#${e.hex}` }} />
+              {e.code}
+            </button>
+          );
+        })}
+        {focus.size > 0 && (
+          <button type="button" className="linklike" onClick={() => setFocus(new Set())}>
+            全部显示
+          </button>
+        )}
+      </div>
+    </>
   );
 }

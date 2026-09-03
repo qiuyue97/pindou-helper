@@ -266,3 +266,59 @@ def test_recode_rejects_a_code_outside_the_palette(vip, done):  # noqa: F811
     sid, d = done
     r = _patch(vip, sid, "recode", {"code": d["counts"][0]["code"], "to": "ZZ9"})
     assert r.status_code == 422
+
+
+# ---------- 空白格 ----------
+
+def test_a_cell_can_be_marked_blank(vip, done):  # noqa: F811
+    """有空格子的图纸上，生成器把空格印成了浅色、被识别成了某个色号——
+    得能把它改回空白。空串不行，那是「撤销这一格的修正」。"""
+    sid, d = done
+    k = d["classes"][0]
+    r0, c0 = divmod(k["cells"][0], d["cols"])
+    before = d["tally"][k["code"]]
+
+    body = _patch(vip, sid, "cells", {"patches": [{"r": r0, "c": c0, "code": "-"}]}).json()
+    assert body["tally"][k["code"]] == before - 1, "空格不计入任何色号"
+    assert body["overrides"][f"{r0},{c0}"] == "-"
+
+
+def test_a_blank_cell_can_be_given_a_code(vip, done):  # noqa: F811
+    """反过来也要能改：识别成空白、其实有豆子的那些格。"""
+    sid, d = done
+    k = d["classes"][0]
+    r0, c0 = divmod(k["cells"][0], d["cols"])
+    _patch(vip, sid, "cells", {"patches": [{"r": r0, "c": c0, "code": "-"}]})
+
+    body = _patch(vip, sid, "cells", {"patches": [{"r": r0, "c": c0, "code": "M3"}]}).json()
+    assert body["tally"]["M3"] == 1
+
+
+def test_blank_is_not_checked_against_the_palette(vip, done):  # noqa: F811
+    """空白不是色号，不该拿色卡去校验它。"""
+    sid, d = done
+    r = _patch(vip, sid, "cells", {"patches": [{"r": 0, "c": 0, "code": "-"}]})
+    assert r.status_code == 200, r.text
+
+
+def test_recoding_the_blank_group_fills_every_blank_cell(vip, done):  # noqa: F811
+    """把「空白格」整组改成一个色号：检测出来的空格没有类，只能逐格写覆盖。"""
+    sid, d = done
+    k = d["classes"][0]
+    r0, c0 = divmod(k["cells"][0], d["cols"])
+    r1, c1 = divmod(k["cells"][1], d["cols"])
+    _patch(vip, sid, "cells", {"patches": [{"r": r0, "c": c0, "code": "-"},
+                                           {"r": r1, "c": c1, "code": "-"}]})
+
+    body = _patch(vip, sid, "recode", {"code": "-", "to": "B8"}).json()
+    assert body["tally"]["B8"] == 2
+    assert "-" not in body["overrides"].values()
+
+
+def test_recoding_a_code_to_blank_empties_it(vip, done):  # noqa: F811
+    """整类改成空白：改的是类的色号，不必逐格写覆盖。"""
+    sid, d = done
+    code = d["counts"][0]["code"]
+    body = _patch(vip, sid, "recode", {"code": code, "to": "-"}).json()
+    assert code not in body["tally"]
+    assert "-" not in body["tally"], "空白不是色号，不进统计"

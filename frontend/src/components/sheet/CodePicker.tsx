@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { SERIES_221, type CandidateSet } from '../../color/match';
-import { byCode } from '../../lib/sheetSort';
+import { BLANK_CODE, byCode } from '../../lib/sheetSort';
 import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
 
 const S221 = new Set<string>(SERIES_221);
@@ -24,12 +24,15 @@ export default function CodePicker({
   scope = '291',
   autoFocus = false,
   label = '色号',
+  allowBlank = false,
 }: {
   value: string;
   onChange: (code: string) => void;
   scope?: CandidateSet;
   autoFocus?: boolean;
   label?: string;
+  /** 有空格子的图纸：允许把格子改成「空白格」，并且置顶 */
+  allowBlank?: boolean;
 }) {
   const { colors } = useEffectiveCatalog();
   const [text, setText] = useState(value);
@@ -89,7 +92,23 @@ export default function CodePicker({
       />
       {open && (
         <ul role="listbox" className="code-picker-list">
-          {matches.length === 0 && <li className="muted">没有匹配的色号</li>}
+          {/* 置顶。它不是色号，是「这一格没有豆子」——有空格子的图纸上这是最常
+              用的一项，埋在两百多个色号里面找不到。 */}
+          {allowBlank && (
+            <li>
+              <button
+                type="button"
+                role="option"
+                className="blank-option"
+                aria-selected={value === BLANK_CODE}
+                onClick={() => commit(BLANK_CODE)}
+              >
+                <span className="swatch blank" />
+                空白格
+              </button>
+            </li>
+          )}
+          {matches.length === 0 && !allowBlank && <li className="muted">没有匹配的色号</li>}
           {matches.map((c) => (
             <li key={c.code}>
               <button

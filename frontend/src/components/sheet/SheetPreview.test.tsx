@@ -5,7 +5,7 @@
  * 底部汇总的正式图纸。用户照着屏幕拼，拿到的文件却是另一回事。现在共用
  * sheetToDrawing + drawSheet，这里就盯着「预览确实画了正式图纸该有的东西」。
  */
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { Sheet } from '../../api/types';
 import { type Ctx2DStub, stubCanvas2D } from '../../test/setup';
@@ -73,4 +73,40 @@ it('画的是校对之后的归属：改过的格子按新色号画', () => {
 it('还没识别出行列时不画', () => {
   render(<SheetPreview sheet={makeSheet({ rows: 0, cols: 0 })} />);
   expect(screen.queryByLabelText('完整图纸')).toBeNull();
+});
+
+// ---------- 按色号突出显示 ----------
+
+it('默认全部照常画', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  expect(ctx.alphaLog.filter((a) => a < 1)).toHaveLength(0);
+});
+
+it('选中一个色号，其余的调淡', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  // 两格 H15 照常，两格 B8 调淡
+  expect(ctx.alphaLog.filter((a) => a < 1).length).toBeGreaterThan(0);
+});
+
+it('再点一下取消，全部恢复', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  const chip = screen.getByRole('button', { name: /H15/ });
+  fireEvent.click(chip);
+  ctx.alphaLog.length = 0;
+  fireEvent.click(chip);
+  expect(ctx.alphaLog.filter((a) => a < 1)).toHaveLength(0);
+});
+
+it('「全部显示」一键还原', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  ctx.alphaLog.length = 0;
+  fireEvent.click(screen.getByRole('button', { name: '全部显示' }));
+  expect(ctx.alphaLog.filter((a) => a < 1)).toHaveLength(0);
+});
+
+it('没选任何色号时不显示「全部显示」', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  expect(screen.queryByRole('button', { name: '全部显示' })).toBeNull();
 });

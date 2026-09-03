@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CountRow, Sheet } from '../../api/types';
 import { type Rect, cellRect } from '../../lib/sheetGeometry';
-import { groupByCode } from '../../lib/sheetSort';
+import { BLANK_CODE, groupByCode } from '../../lib/sheetSort';
 import CodePicker from './CodePicker';
 
 /** 每格在校对网格里画多大（设备像素）。够看清印在上面的色号。 */
@@ -45,7 +45,26 @@ export default function SheetReview({
   onPatchPrior,
   onPatchCells,
 }: SheetReviewProps) {
-  const rows = sheet.counts;
+  // 空格自己单列一行。它不在 counts 里（空格不是色号，不进任何统计），可要是
+  // 不列出来，被识别成空白的格子就再也选不中、改不回去了。
+  const blanks = useMemo(() => countBlanks(sheet), [sheet]);
+  const rows = useMemo(
+    () =>
+      blanks > 0
+        ? [
+            ...sheet.counts,
+            {
+              code: BLANK_CODE,
+              sheet: blanks,
+              prior: null,
+              classes: [],
+              level: 'ok' as const,
+              custom: false,
+            },
+          ]
+        : sheet.counts,
+    [sheet.counts, blanks],
+  );
   const [active, setActive] = useState<string | null>(rows[0]?.code ?? null);
   const current = rows.find((r) => r.code === active) ?? rows[0] ?? null;
 
@@ -56,6 +75,7 @@ export default function SheetReview({
         active={current?.code ?? null}
         hasPrior={Object.keys(sheet.prior).length > 0}
         palette={sheet.palette}
+        allowBlank={sheet.has_blanks}
         onSelect={setActive}
         onRename={(row, code) => onRecode(row.code, code)}
         onCount={(row, n) => {
@@ -80,6 +100,7 @@ function CodeColumn({
   active,
   hasPrior,
   palette,
+  allowBlank,
   onSelect,
   onRename,
   onCount,
@@ -88,6 +109,7 @@ function CodeColumn({
   active: string | null;
   hasPrior: boolean;
   palette: Sheet['palette'];
+  allowBlank: boolean;
   onSelect: (code: string) => void;
   onRename: (row: CountRow, code: string) => void;
   onCount: (row: CountRow, n: number | null) => void;
@@ -125,7 +147,7 @@ function CodeColumn({
                   ✓
                 </span>
               )}
-              <strong>{row.code}</strong>
+              <strong>{row.code === BLANK_CODE ? '空白格' : row.code}</strong>
             </button>
 
             <div className="code-row-edit">
@@ -134,6 +156,7 @@ function CodeColumn({
                   value={row.code}
                   scope={palette}
                   autoFocus
+                  allowBlank={allowBlank && row.code !== BLANK_CODE}
                   label={`${row.code} 的新色号`}
                   onChange={(code) => {
                     setEditing(null);
@@ -178,6 +201,44 @@ function CodeColumn({
   );
 }
 
+/** 某个色号名下的全部格子（扁平下标）。含逐格覆盖进来的——它们没有类。 */
+function codeCells(sheet: Sheet, code: string): number[] {
+  const byCode = new Map(groupByCode(sheet.classes).map((g) => [g.code, g]));
+  const own = new Set(byCode.get(code)?.cells ?? []);
+  for (const [key, over] of Object.entries(sheet.overrides)) {
+    const [r, c] = key.split(',').map(Number);
+    const flat = r! * sheet.cols + c!;
+    if (over === code) own.add(flat);
+    else own.delete(flat); // 被改去别的色号了，不再属于这里
+  }
+  return [...own].sort((a, b) => a - b);
+}
+
+/**
+ * 所有空格。两个来源：检测出来就是空的（label -1），和人工标成空白的。
+ * 它们是同一回事，合在一起。
+ */
+function blankCells(sheet: Sheet): number[] {
+  const coded = new Set(sheet.classes.filter((c) => c.code !== BLANK_CODE).map((c) => c.klass));
+  const out: number[] = [];
+  for (let flat = 0; flat < sheet.rows * sheet.cols; flat += 1) {
+    const r = Math.floor(flat / sheet.cols);
+    const c = flat % sheet.cols;
+    const over = sheet.overrides[`${r},${c}`];
+    if (over !== undefined) {
+      if (over === BLANK_CODE) out.push(flat);
+      continue;
+    }
+    const k = sheet.labels[flat];
+    if (k === undefined || k < 0 || !coded.has(k)) out.push(flat);
+  }
+  return out;
+}
+
+function countBlanks(sheet: Sheet): number {
+  return blankCells(sheet).length;
+}
+
 /** 右边：这个色号下的豆点，50 个一页。 */
 function CellPane({
   sheet,
@@ -194,17 +255,10 @@ function CellPane({
   const { cols } = sheet;
 
   // 这个色号名下的全部格子。含逐格覆盖进来的——它们没有类，但确实归这个色号。
-  const cells = useMemo(() => {
-    const byCode = new Map(groupByCode(sheet.classes).map((g) => [g.code, g]));
-    const own = new Set(byCode.get(row.code)?.cells ?? []);
-    for (const [key, code] of Object.entries(sheet.overrides)) {
-      const [r, c] = key.split(',').map(Number);
-      const flat = r! * cols + c!;
-      if (code === row.code) own.add(flat);
-      else own.delete(flat); // 被改去别的色号了，不再属于这里
-    }
-    return [...own].sort((a, b) => a - b);
-  }, [sheet.classes, sheet.overrides, row.code, cols]);
+  const cells = useMemo(
+    () => (row.code === BLANK_CODE ? blankCells(sheet) : codeCells(sheet, row.code)),
+    [sheet, row.code],
+  );
 
   const pageCells = useMemo(
     () => cells.slice(page * PER_PAGE, (page + 1) * PER_PAGE),
@@ -265,7 +319,7 @@ function CellPane({
   return (
     <div className="cell-pane">
       <p className="cell-pane-head">
-        <strong>{row.code}</strong>
+        <strong>{row.code === BLANK_CODE ? '空白格' : row.code}</strong>
         <span className="muted">共 {cells.length} 个豆点</span>
       </p>
 
@@ -347,6 +401,7 @@ function CellPane({
           <CodePicker
             value=""
             scope={sheet.palette}
+            allowBlank={sheet.has_blanks}
             label="把选中的豆点改成"
             onChange={(code) => {
               onPatchCells(

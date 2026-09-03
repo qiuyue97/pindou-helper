@@ -361,3 +361,47 @@ it('原图没了就说清楚，而不是留一块空白', async () => {
   setup();
   expect(await screen.findByText(/原图已不存在/)).toBeInTheDocument();
 });
+
+// ---------- 空白格 ----------
+
+it('有空格的图纸把空格单列一行，选得中也改得回来', () => {
+  // 4x4 里有两格没有归属（label -1）
+  const s = makeSheet({
+    has_blanks: true,
+    labels: [0, 0, -1, -1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1],
+    classes: [
+      cls({ klass: 0, code: 'H15', n: 8, cells: [0, 1, 4, 5, 8, 9, 12, 13] }),
+      cls({ klass: 1, code: 'B8', n: 6, cells: [6, 7, 10, 11, 14, 15] }),
+    ],
+    counts: [
+      row({ code: 'H15', sheet: 8, prior: 8, classes: [0] }),
+      row({ code: 'B8', sheet: 6, prior: 6, classes: [1] }),
+    ],
+  });
+  const { onPatchCells } = setup(s);
+  const list = screen.getByLabelText('色号列表');
+  expect(within(list).getByText('空白格')).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole('button', { name: '查看 -' }));
+  expect(screen.getByText('共 2 个豆点')).toBeInTheDocument();
+
+  // 把一格空白改成真色号
+  fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'B8' } });
+  fireEvent.click(screen.getByRole('option', { name: 'B8' }));
+  expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 2, code: 'B8' }]);
+});
+
+it('没有空格的图纸不列这一行', () => {
+  setup();
+  expect(within(screen.getByLabelText('色号列表')).queryByText('空白格')).toBeNull();
+});
+
+it('有空格的图纸上，改豆点可以改成空白格', () => {
+  const s = makeSheet({ has_blanks: true });
+  const { onPatchCells } = setup(s);
+  fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+  fireEvent.focus(screen.getByRole('combobox'));
+  fireEvent.click(screen.getByRole('option', { name: '空白格' }));
+  expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 0, code: '-' }]);
+});

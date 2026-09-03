@@ -137,3 +137,28 @@ it('Esc 收起', () => {
   fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
   expect(screen.queryByRole('listbox')).toBeNull();
 });
+
+// ---------- 空白格 ----------
+
+it('有空格子的图纸上，「空白格」置顶', () => {
+  const onChange = vi.fn();
+  render(<CodePicker value="" onChange={onChange} allowBlank />);
+  fireEvent.focus(screen.getByRole('combobox'));
+  const options = screen.getAllByRole('option');
+  expect(options[0]).toHaveTextContent('空白格');
+  fireEvent.click(options[0]!);
+  // 送出去的是记号，不是中文
+  expect(onChange).toHaveBeenCalledWith('-');
+});
+
+it('没有空格子的图纸上不给这个选项', () => {
+  render(<CodePicker value="" onChange={vi.fn()} />);
+  fireEvent.focus(screen.getByRole('combobox'));
+  expect(screen.queryByText('空白格')).toBeNull();
+});
+
+it('输入过滤不掉「空白格」——它不是色号', () => {
+  render(<CodePicker value="" onChange={vi.fn()} allowBlank />);
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'zzz' } });
+  expect(screen.getByText('空白格')).toBeInTheDocument();
+});

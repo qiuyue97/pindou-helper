@@ -26,6 +26,14 @@ export const LEVEL_WHY: Record<SheetLevel, string> = {
   guess: '未读出色号，这是按颜色猜的',
 };
 
+/**
+ * 「这一格就是空的」的写法，和后端的 matrix.BLANK 是同一个记号。
+ *
+ * 空串不能用——它已经被「撤销这一格的人工修正」占了。有空格子的图纸上，用户要能
+ * 把一格改成空白（生成器把空格印成了浅色，识别成了某个色号）。
+ */
+export const BLANK_CODE = '-';
+
 const CODE_RE = /^([A-Za-z]*)(\d*)(.*)$/;
 
 /** 先系列 A–Z，再序号升序。不能直接按字符串排——那样 A10 会排在 A2 前面。 */

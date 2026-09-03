@@ -102,6 +102,9 @@ export function inkOn(hex: string): string {
  *
  * 只依赖 2D 上下文，不碰 DOM——所以能在测试里对着桩断言画了什么。
  */
+/** 没被选中的色号画成这个透明度。留一点而不是全隐，是为了还能看出图形轮廓。 */
+const DIM = 0.12;
+
 export function drawSheet(
   ctx: CanvasRenderingContext2D,
   params: {
@@ -110,9 +113,12 @@ export function drawSheet(
     cells: ExportCell[];
     legend: LegendEntry[];
     layout: Layout;
+    /** 只突出这些色号，其余的调淡。空集或不给 = 全部照常画。 */
+    focus?: Set<string>;
   },
 ): void {
   const { rows, cols, cells, legend } = params;
+  const focus = params.focus?.size ? params.focus : null;
   const { cell, ruler, width, height, gridW, gridH, legendTop, legendCols } = params.layout;
 
   ctx.fillStyle = '#fff';
@@ -128,11 +134,13 @@ export function drawSheet(
       if (!it || !it.code) continue; // 空格留白
       const x = ruler + c * cell;
       const y = ruler + r * cell;
+      ctx.globalAlpha = focus && !focus.has(it.code) ? DIM : 1;
       ctx.fillStyle = `#${it.hex}`;
       ctx.fillRect(x, y, cell, cell);
       ctx.fillStyle = inkOn(it.hex);
       ctx.font = `${font}px system-ui, sans-serif`;
       ctx.fillText(it.code, x + cell / 2, y + cell / 2);
+      ctx.globalAlpha = 1;
     }
   }
 
@@ -194,6 +202,7 @@ export function drawSheet(
   legend.forEach((e, i) => {
     const x = 8 + (i % legendCols) * LEGEND_W;
     const y = legendTop + Math.floor(i / legendCols) * LEGEND_H;
+    ctx.globalAlpha = focus && !focus.has(e.code) ? DIM : 1;
     ctx.fillStyle = `#${e.hex}`;
     ctx.fillRect(x, y, 30, 30);
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
@@ -205,6 +214,7 @@ export function drawSheet(
     ctx.fillStyle = '#555';
     ctx.font = '13px system-ui, sans-serif';
     ctx.fillText(`${e.count} 颗`, x + 38, y + 26);
+    ctx.globalAlpha = 1;
   });
 }
 

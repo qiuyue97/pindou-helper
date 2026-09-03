@@ -14,12 +14,27 @@
 
 from app.text_parse import code_key
 
+#: 「这一格就是空的」的写法。
+#:
+#: 空串不能用——它已经被 `apply_cell_patch` 占作「撤销这一格的人工修正」了。
+#: 有空格子的图纸上，用户得能把一格改成空白（生成器把空格印成了浅色，识别成了
+#: 某个色号），所以需要一个和「撤销」区分得开的记号。
+#:
+#: 它只活在 overrides / classes[k].code 里。**算出来的矩阵上空格一律是空串**，
+#: 和 label 为 -1 的检测空格没有区别——它们本来就是同一回事。
+BLANK = "-"
+
+
+def _code(raw: str) -> str:
+    """把存下来的写法换成矩阵上的写法。空白的两种来源在这里合流。"""
+    return "" if raw == BLANK else raw
+
 
 def code_at(labels, classes, overrides, r: int, c: int, cols: int) -> str:
-    """某一格最终是什么色号。空格（label -1）返回空串。"""
+    """某一格最终是什么色号。空格（label -1，或人工标成空白）返回空串。"""
     key = f"{r},{c}"
     if key in overrides:
-        return overrides[key]
+        return _code(overrides[key])
     i = r * cols + c
     if i >= len(labels):
         return ""
@@ -28,25 +43,31 @@ def code_at(labels, classes, overrides, r: int, c: int, cols: int) -> str:
         return ""
     for cl in classes:
         if cl["klass"] == k:
-            return cl.get("code", "")
+            return _code(cl.get("code", ""))
     return ""
 
 
 def matrix(labels, classes, overrides, rows: int, cols: int) -> list[list[str]]:
-    by_k = {c["klass"]: c.get("code", "") for c in classes}
+    by_k = {c["klass"]: _code(c.get("code", "")) for c in classes}
     out = []
     for r in range(rows):
         row = []
         for c in range(cols):
             key = f"{r},{c}"
             if key in overrides:
-                row.append(overrides[key])
+                row.append(_code(overrides[key]))
                 continue
             i = r * cols + c
             k = labels[i] if i < len(labels) else -1
             row.append(by_k.get(k, "") if k >= 0 else "")
         out.append(row)
     return out
+
+
+def blank_cells(labels, classes, overrides, rows: int, cols: int) -> list[tuple[int, int]]:
+    """所有空格的坐标。检测出来的和人工标的都算——它们是同一回事。"""
+    m = matrix(labels, classes, overrides, rows, cols)
+    return [(r, c) for r in range(rows) for c in range(cols) if not m[r][c]]
 
 
 def tally(labels, classes, overrides, rows: int, cols: int) -> dict[str, int]:
