@@ -20,6 +20,7 @@ export default function App() {
         <Route index element={<InventoryPage />} />
         <Route path="match" element={<MatchPage />} />
         <Route path="sheet" element={<SheetPage />} />
+        <Route path="sheet/:sheetId" element={<SheetPage />} />
         <Route path="colors" element={<MyColorsPage />} />
         <Route path="history" element={<HistoryPage />} />
       </Route>

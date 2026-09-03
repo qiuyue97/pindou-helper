@@ -126,48 +126,63 @@ function CellGrid({
 
   return (
     <div className="cell-grid-wrap">
-      <canvas
-        ref={ref}
-        className="cell-grid"
-        width={PER_ROW * TILE}
-        height={rows * TILE}
-        style={{ maxWidth: '100%', touchAction: 'manipulation' }}
-      />
-      {/* 勾选层压在 canvas 上：canvas 画像素，这一层负责可访问性和点击。
-          节点数被 PER_PAGE 封住，不会随色号的格子数长。 */}
-      <div className="cell-hits" style={{ gridTemplateColumns: `repeat(${PER_ROW}, 1fr)` }}>
-        {pageCells.map((flat) => {
-          const r = Math.floor(flat / cols);
-          const c = flat % cols;
-          const over = sheet.overrides[`${r},${c}`];
-          return (
-            <span key={flat} className={over ? 'cell-hit edited' : 'cell-hit'}>
-              <input
-                type="checkbox"
-                aria-label={`第 ${r + 1} 行第 ${c + 1} 列`}
-                checked={picked.has(flat)}
-                onChange={() =>
-                  setPicked((s) => {
-                    const next = new Set(s);
-                    if (next.has(flat)) next.delete(flat);
-                    else next.add(flat);
-                    return next;
-                  })
-                }
-              />
-              {over && (
-                <button
-                  type="button"
-                  className="ghost"
-                  aria-label={`撤销第 ${r + 1} 行第 ${c + 1} 列`}
-                  onClick={() => onPatchCells([{ r, c, code: '' }])}
-                >
-                  ↺
-                </button>
-              )}
-            </span>
-          );
-        })}
+      {/* canvas 和勾选层必须在**同一个贴合 canvas 尺寸**的容器里。
+          先前勾选层是 absolute + left/right:0，撑满的是外层（还装着分页和操作条）
+          的宽度，于是 12 列被摊到上千像素上，格子和勾选框整个对不上。 */}
+      <div className="cell-grid-stack">
+        <canvas
+          ref={ref}
+          className="cell-grid"
+          width={PER_ROW * TILE}
+          height={rows * TILE}
+          style={{ maxWidth: '100%', touchAction: 'manipulation' }}
+        />
+        {/* canvas 画像素，这一层负责可访问性和点击。节点数被 PER_PAGE 封住，
+            不会随色号的格子数长。 */}
+        <div
+          className="cell-hits"
+          style={{
+            gridTemplateColumns: `repeat(${PER_ROW}, 1fr)`,
+            gridTemplateRows: `repeat(${rows}, 1fr)`,
+          }}
+        >
+          {pageCells.map((flat) => {
+            const r = Math.floor(flat / cols);
+            const c = flat % cols;
+            const over = sheet.overrides[`${r},${c}`];
+            const on = picked.has(flat);
+            return (
+              <span
+                key={flat}
+                className={`cell-hit${over ? ' edited' : ''}${on ? ' picked' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`第 ${r + 1} 行第 ${c + 1} 列`}
+                  checked={on}
+                  onChange={() =>
+                    setPicked((s) => {
+                      const next = new Set(s);
+                      if (next.has(flat)) next.delete(flat);
+                      else next.add(flat);
+                      return next;
+                    })
+                  }
+                />
+                {over && (
+                  <button
+                    type="button"
+                    className="ghost undo"
+                    aria-label={`撤销第 ${r + 1} 行第 ${c + 1} 列`}
+                    onClick={() => onPatchCells([{ r, c, code: '' }])}
+                  >
+                    ↺
+                  </button>
+                )}
+              </span>
+            );
+          })}
+        </div>
       </div>
 
       {pageCount > 1 && (

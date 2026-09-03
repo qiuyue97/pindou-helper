@@ -50,6 +50,7 @@ it('自定义色不出现——后端只认 BASE 色卡，选了会 422', () => 
 
 it('221 范围下排除 291 独有的系列', () => {
   render(<CodePicker value="" onChange={() => {}} scope="221" />);
+  fireEvent.focus(screen.getByRole('combobox'));
   const codes = screen.getAllByRole('option').map((o) => o.textContent);
   expect(codes).toContain('H15');
   expect(codes).not.toContain('ZG1');
@@ -57,6 +58,7 @@ it('221 范围下排除 291 独有的系列', () => {
 
 it('291 范围下 ZG 也在', () => {
   render(<CodePicker value="" onChange={() => {}} scope="291" />);
+  fireEvent.focus(screen.getByRole('combobox'));
   expect(screen.getAllByRole('option').map((o) => o.textContent)).toContain('ZG1');
 });
 
@@ -98,7 +100,40 @@ it('输入一个不存在的色号不回调', () => {
 
 it('每个候选带色块，用「我的色卡」的有效色值', () => {
   const { container } = render(<CodePicker value="" onChange={() => {}} scope="291" />);
+  fireEvent.focus(screen.getByRole('combobox'));
   const swatches = container.querySelectorAll('.swatch');
   expect(swatches.length).toBe(5); // 自定义那个被排掉了
   expect((swatches[2] as HTMLElement).style.background).toContain('rgb(0, 0, 255)');
+});
+
+
+// ---------- 下拉是浮层 ----------
+
+it('默认收起——常驻展开会把下面的卡片整个顶开', () => {
+  render(<CodePicker value="A1" onChange={() => {}} />);
+  expect(screen.queryByRole('listbox')).toBeNull();
+});
+
+it('聚焦才展开', () => {
+  render(<CodePicker value="" onChange={() => {}} />);
+  fireEvent.focus(screen.getByRole('combobox'));
+  expect(screen.getByRole('listbox')).toBeInTheDocument();
+});
+
+it('autoFocus 时直接展开——用户就是来选的', () => {
+  render(<CodePicker value="" onChange={() => {}} autoFocus />);
+  expect(screen.getByRole('listbox')).toBeInTheDocument();
+});
+
+it('选中之后收起', () => {
+  render(<CodePicker value="" onChange={() => {}} autoFocus />);
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'H15' } });
+  fireEvent.click(screen.getByRole('option', { name: 'H15' }));
+  expect(screen.queryByRole('listbox')).toBeNull();
+});
+
+it('Esc 收起', () => {
+  render(<CodePicker value="" onChange={() => {}} autoFocus />);
+  fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+  expect(screen.queryByRole('listbox')).toBeNull();
 });

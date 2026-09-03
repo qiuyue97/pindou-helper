@@ -381,42 +381,64 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   font-size: 0.85em;
 }
 
-/* 勾选层压在 canvas 上，格子和瓦片一一对齐。canvas 画像素，这一层负责可访问性
-   和点击——两者的网格必须同参数（12 列 x 44px）。 */
+/* canvas 和勾选层必须在**同一个贴合 canvas 尺寸**的容器里。
+   .cell-grid-stack 用 fit-content 包住 canvas，勾选层的 inset:0 才对得上；
+   放在外层（还装着分页和操作条）上就会被摊到整行宽度，格子全错位。 */
 .cell-grid-wrap {
   position: relative;
 }
+.cell-grid-stack {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+}
+.cell-grid {
+  display: block; /* 去掉 inline 元素底部的基线空隙，否则勾选层会矮一截 */
+}
 .cell-hits {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
+  inset: 0;
   display: grid;
   gap: 0;
   pointer-events: none;
 }
 .cell-hits .cell-hit {
   pointer-events: auto;
-  display: grid;
-  place-items: center;
   position: relative;
 }
-.cell-hit.edited {
-  outline: 2px solid #2ea043;
-  outline-offset: -2px;
-}
 
-/* 手指的命中面积。桌面上看不出差别，触摸上是能不能用的差别。 */
+/* 选中用边框表示，不用铺满的勾选框——格子上印着色号，那才是用户要看的东西。
+   原生 checkbox 撑到 44px 会把整个格子盖住。 */
 .cell-hit input[type='checkbox'] {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  min-width: 44px;
-  min-height: 44px;
   margin: 0;
-  opacity: 0.35;
+  opacity: 0; /* 只留命中区域，视觉交给 .picked */
+  cursor: pointer;
 }
-.cell-hit input[type='checkbox']:checked {
-  opacity: 1;
+.cell-hit.picked {
+  outline: 3px solid #1f6feb;
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 999px rgba(31, 111, 235, 0.25);
+}
+.cell-hit.edited::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  outline: 2px solid #2ea043;
+  outline-offset: -2px;
+  pointer-events: none;
+}
+.cell-hit .undo {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .cell-pager,
@@ -432,12 +454,22 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   position: relative;
   min-width: 8em;
 }
+/* 浮层，不占文档流。写成常驻的行内列表时，二百多个候选会把下面的卡片整个顶开。 */
 .code-picker-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  min-width: 10em;
   max-height: 240px;
   overflow-y: auto;
   list-style: none;
-  margin: 0;
+  margin: 2px 0 0;
   padding: 0;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
 }
 .code-picker-list button {
   display: flex;
@@ -462,4 +494,22 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
     display: block;
     overflow-x: auto;
   }
+}
+
+/* 最近的图纸：切走再回来靠它找回未完成的任务。 */
+.sheet-resume h3 {
+  margin: 16px 0 6px;
+  font-size: 0.95rem;
+}
+.sheet-resume ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sheet-resume li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
 }

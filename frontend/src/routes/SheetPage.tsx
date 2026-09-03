@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { apiSend } from '../api/client';
-import { useSheet } from '../api/hooks';
+import { useSheet, useSheets } from '../api/hooks';
 import type { Sheet, SheetGuess } from '../api/types';
 import BatchDialog from '../components/BatchDialog';
 import CellReview from '../components/sheet/CellReview';
@@ -15,17 +16,27 @@ import { VIP_UPSELL, useVip } from '../state/useVip';
 /**
  * 图纸识别（VIP）：上传 → 确认网格 → 校对。
  *
+ * **正在识别的图纸放在 URL 里**（/sheet/:sheetId），不放在组件 state 里。
+ * 识别是后台线程跑的，界面上写着「可以先去做别的，回来结果还在」——那句话只有
+ * 在切走再回来还找得到这张图纸时才算数。存在 state 里的话一卸载就没了，
+ * 那是在骗用户。
+ *
  * 识别不出来**不是失败**。MinerU 挂了、没配 token、这张图的颜色是一段连续谱，
  * 产出的都是一张全红的矩阵——那是正常产出，用户可以从零改。界面要如实说明
  * 发生了什么，而不是报错了事。
  */
-export default function SheetPage({ sheetId = null }: { sheetId?: number | null }) {
+export default function SheetPage() {
   const { isVip } = useVip();
   const { show } = useToast();
+  const navigate = useNavigate();
+  const { sheetId } = useParams();
+  const id = sheetId ? Number(sheetId) : null;
+
   const [guess, setGuess] = useState<SheetGuess | null>(null);
-  const [id, setId] = useState<number | null>(sheetId);
   const [deducting, setDeducting] = useState(false);
   const { data: sheet } = useSheet(id, isVip);
+  // 上传界面上要列出还没弄完的图纸，否则用户切走一次就再也找不回来
+  const { data: recent } = useSheets(isVip && id === null);
 
   if (!isVip) {
     return (
@@ -47,7 +58,7 @@ export default function SheetPage({ sheetId = null }: { sheetId?: number | null 
     if (!guess) return;
     try {
       await apiSend('POST', `/api/sheets/${guess.id}/recognise`, g);
-      setId(guess.id);
+      navigate(`/sheet/${guess.id}`);
     } catch (e) {
       show(e instanceof Error ? e.message : '无法开始识别');
     }
@@ -62,16 +73,18 @@ export default function SheetPage({ sheetId = null }: { sheetId?: number | null 
 
   return (
     <main className="app-main sheet-page">
-      {!guess && !sheet && (
-        <SheetUpload
-          onUploaded={(g) => {
-            setGuess(g);
-            setId(null);
-          }}
-        />
+      {id === null && !guess && (
+        <>
+          <SheetUpload
+            onUploaded={(g) => {
+              setGuess(g);
+            }}
+          />
+          <Resume sheets={recent?.sheets ?? []} />
+        </>
       )}
 
-      {guess && !id && <GridConfirm guess={guess} onConfirm={start} />}
+      {id === null && guess && <GridConfirm guess={guess} onConfirm={start} />}
 
       {sheet && (sheet.status === 'pending' || sheet.status === 'running') && (
         <p>正在识别，这可能要一两分钟。可以先去做别的，回来结果还在。</p>
@@ -87,6 +100,9 @@ export default function SheetPage({ sheetId = null }: { sheetId?: number | null 
           <div className="sheet-actions">
             <button type="button" onClick={() => setDeducting(true)}>
               把这份清单送去按图扣减
+            </button>
+            <button type="button" className="ghost" onClick={() => navigate('/sheet')}>
+              识别另一张
             </button>
           </div>
           <ReconcileTable
@@ -111,6 +127,38 @@ export default function SheetPage({ sheetId = null }: { sheetId?: number | null 
         />
       )}
     </main>
+  );
+}
+
+const STATUS_TEXT: Record<Sheet['status'], string> = {
+  pending: '排队中',
+  running: '识别中',
+  ready: '等待确认网格',
+  done: '已完成',
+  failed: '失败',
+};
+
+/** 最近的图纸，点一下回到它。 */
+function Resume({ sheets }: { sheets: Sheet[] }) {
+  const navigate = useNavigate();
+  if (sheets.length === 0) return null;
+  return (
+    <div className="sheet-resume">
+      <h3>最近的图纸</h3>
+      <ul>
+        {sheets.map((s) => (
+          <li key={s.id}>
+            <button type="button" className="linklike" onClick={() => navigate(`/sheet/${s.id}`)}>
+              #{s.id} {s.rows}×{s.cols}
+            </button>
+            <span className={`muted level-${s.status === 'failed' ? 'guess' : 'ok'}`}>
+              {STATUS_TEXT[s.status]}
+            </span>
+            <span className="muted">{new Date(s.created_at).toLocaleString()}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

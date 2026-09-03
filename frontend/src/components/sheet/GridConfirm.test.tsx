@@ -146,3 +146,39 @@ it('触摸的命中半径更大——手指没有像素精度', () => {
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
   expect(onConfirm.mock.calls[1]![0].rect.slice(0, 2)).toEqual([70, 70]);
 });
+
+it('大图也拖得动角点——命中半径是屏幕像素，不是图像像素', () => {
+  // 4096x3000 的图显示成 900px 宽：缩放比 ≈4.55
+  const onConfirm = setup({
+    width: 4096,
+    height: 3000,
+    rect: [100, 100, 3900, 2800],
+    snap_x: [],
+    snap_y: [],
+  });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas, 900, 659);
+
+  // 左上角 (100,100) 图像坐标 → 屏幕上约 (22,22)。在它旁边 10 屏幕像素处按下，
+  // 换算回图像空间是 45 像素——如果半径没做换算（22 图像像素），就抓不到。
+  fireEvent.pointerDown(canvas, { clientX: 32, clientY: 32, pointerId: 1 });
+  fireEvent.pointerMove(canvas, { clientX: 60, clientY: 60, pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+
+  const moved = onConfirm.mock.calls[0]![0].rect;
+  expect(moved[0]).not.toBe(100);
+  expect(moved[1]).not.toBe(100);
+});
+
+it('小图上命中半径不会大到误抓', () => {
+  const onConfirm = setup({ snap_x: [], snap_y: [] });
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas, 400, 300); // 1:1
+  // 距角 100px，无论如何都不该抓到
+  fireEvent.pointerDown(canvas, { clientX: 140, clientY: 140, pointerId: 1 });
+  fireEvent.pointerMove(canvas, { clientX: 150, clientY: 150, pointerId: 1 });
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0].rect).toEqual([40, 40, 340, 260]);
+});

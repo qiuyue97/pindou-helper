@@ -102,7 +102,13 @@ export default function GridConfirm({
     }
   }, [rect, rows, cols]);
 
-  /** 屏幕坐标 → 图像坐标。canvas 被 CSS 缩放过，比例要从实际尺寸算。 */
+  /** 图像像素 / 屏幕像素。canvas 被 CSS 缩放过，比例要从实际尺寸算。 */
+  function scaleOf(el: HTMLCanvasElement): number {
+    const box = el.getBoundingClientRect();
+    return box.width ? el.width / box.width : 1;
+  }
+
+  /** 屏幕坐标 → 图像坐标。 */
   function localPoint(e: React.PointerEvent<HTMLCanvasElement>): [number, number] {
     const box = e.currentTarget.getBoundingClientRect();
     const kx = box.width ? e.currentTarget.width / box.width : 1;
@@ -112,7 +118,12 @@ export default function GridConfirm({
 
   function onDown(e: React.PointerEvent<HTMLCanvasElement>) {
     const [ix, iy] = localPoint(e);
-    const radius = e.pointerType === 'touch' ? HIT_TOUCH : HIT_MOUSE;
+    // 命中半径是**屏幕**像素（手指/鼠标的精度是屏幕上的事），而 hitCorner 在
+    // **图像**空间比距离，所以必须跟着缩放比一起换算。
+    //
+    // 不换算的后果：一张 4096px 宽的图显示成 900px，缩放比 4.55，22 图像像素只
+    // 相当于 4.9 个屏幕像素——用户得精确点在角上 5 像素内，图越大越拖不动。
+    const radius = (e.pointerType === 'touch' ? HIT_TOUCH : HIT_MOUSE) * scaleOf(e.currentTarget);
     const corner = hitCorner(rect, ix, iy, radius);
     if (corner === null) return;
     drag.current = corner;
