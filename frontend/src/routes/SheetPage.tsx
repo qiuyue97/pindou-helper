@@ -4,10 +4,9 @@ import { apiSend } from '../api/client';
 import { useSheet, useSheets } from '../api/hooks';
 import type { Sheet, SheetGuess } from '../api/types';
 import BatchDialog from '../components/BatchDialog';
-import CellReview from '../components/sheet/CellReview';
 import GridConfirm, { type Geometry } from '../components/sheet/GridConfirm';
-import ReconcileTable from '../components/sheet/ReconcileTable';
 import SheetCanvas from '../components/sheet/SheetCanvas';
+import SheetReview from '../components/sheet/SheetReview';
 import SheetUpload from '../components/sheet/SheetUpload';
 import { byCode } from '../lib/sheetSort';
 import { useToast } from '../state/ToastContext';
@@ -105,13 +104,10 @@ export default function SheetPage() {
               识别另一张
             </button>
           </div>
-          <ReconcileTable
+          <SheetReview
             sheet={sheet}
             onPatchClasses={(patches) => void patch('/classes', { patches })}
             onPatchPrior={(prior) => void patch('/prior', { prior })}
-          />
-          <CellReview
-            sheet={sheet}
             onPatchCells={(patches) => void patch('/cells', { patches })}
           />
         </>

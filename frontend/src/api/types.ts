@@ -207,16 +207,24 @@ export interface SheetClass {
   cells: number[];
 }
 
-/** 对账表的一行。按**色号**，不是按类——一个色号名下的多个类合并成一行。 */
+/**
+ * 一个色号一行。按**色号**，不是按类——一个色号名下的多个类合并成一行。
+ *
+ * 界面上的两个词：
+ *   图纸数量   = prior，图例上印着的数。可以改，改的是「图纸说有多少」
+ *   已识别数量 = sheet，当前分在这个色号下的格子数。数出来的事实
+ */
 export interface CountRow {
   code: string;
-  /** 本图数出来多少格 */
+  /** 已识别数量 */
   sheet: number;
-  /** AI 说有多少。null = 图例里没有这个色号 */
+  /** 图纸数量。null = 图例里根本没有这个色号 */
   prior: number | null;
   /** 名下有哪些类。改这一行的色号要把它们全带上。 */
   classes: number[];
   level: SheetLevel;
+  /** 图例里没有、用户自己改出来的色号。标绿，不算「数量对不上」。 */
+  custom: boolean;
 }
 
 export interface Sheet {

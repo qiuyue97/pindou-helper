@@ -61,7 +61,7 @@ function sheet(over: Partial<Sheet> = {}): Sheet {
         cells: [0, 1, 2, 3],
       },
     ],
-    counts: [{ code: 'H15', sheet: 4, prior: 4, classes: [0], level: 'ok' }],
+    counts: [{ code: 'H15', sheet: 4, prior: 4, classes: [0], level: 'ok', custom: false }],
     overrides: {},
     prior: { H15: 4 },
     engine: 'mineru/vlm',
@@ -131,7 +131,7 @@ it('没有颜色结构时如实说明，而不是报错', async () => {
   });
   show(1);
   expect(await screen.findByText(/没有颜色结构/)).toBeInTheDocument();
-  expect(screen.getByLabelText('色号对账')).toBeInTheDocument();
+  expect(screen.getByLabelText('色号列表')).toBeInTheDocument();
 });
 
 it('MinerU 没用上时说明是按颜色猜的', async () => {
@@ -151,7 +151,7 @@ it('没有先验时说明没有第二份证据可对账', async () => {
 it('一切正常时不显示任何提示', async () => {
   mockFetch({ 'GET /api/sheets/1': { body: sheet() } });
   const { container } = show(1);
-  await screen.findByLabelText('色号对账');
+  await screen.findByLabelText('色号列表');
   expect(container.querySelector('.sheet-notices')).toBeNull();
 });
 
@@ -159,16 +159,16 @@ it('完成后完整图纸画在操作区上方', async () => {
   mockFetch({ 'GET /api/sheets/1': { body: sheet() } });
   show(1);
   const canvas = await screen.findByLabelText('完整图纸');
-  const table = screen.getByLabelText('色号对账');
+  const table = screen.getByLabelText('色号列表');
   expect(canvas.compareDocumentPosition(table)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
 
-it('对账表在格子区上面——先看整类，再看例外', async () => {
+it('色号栏在豆点区左边——先挑色号，再看它下面的豆点', async () => {
   mockFetch({ 'GET /api/sheets/1': { body: sheet() } });
   const { container } = show(1);
-  const table = await screen.findByLabelText('色号对账');
-  const review = container.querySelector('.cell-review')!;
-  expect(table.compareDocumentPosition(review)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  const list = await screen.findByLabelText('色号列表');
+  const pane = container.querySelector('.cell-pane')!;
+  expect(list.compareDocumentPosition(pane)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
 
 it('一键把修正后的清单送去按图扣减，按色号顺序排', async () => {

@@ -369,16 +369,108 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   width: 5em;
 }
 
-.cell-card > button {
+/* 左右主从：左边一条色号栏，右边这个色号下的豆点。 */
+.sheet-review {
+  display: grid;
+  grid-template-columns: minmax(190px, 220px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.code-column {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+}
+.code-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.code-row.active {
+  background: rgba(31, 111, 235, 0.1);
+  box-shadow: inset 3px 0 0 #1f6feb;
+}
+/* 数量对不上：着重。图例和本图各说各话，其中一个是错的。 */
+.code-row.mismatch {
+  background: rgba(215, 45, 45, 0.1);
+}
+.code-row.mismatch.active {
+  background: rgba(215, 45, 45, 0.18);
+}
+.code-row-pick {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
+  gap: 6px;
+  background: none;
+  border: 0;
+  padding: 0;
   text-align: left;
+  cursor: pointer;
+  min-height: 32px;
 }
-.cell-card .why {
-  color: #8a6d3b;
-  font-size: 0.85em;
+.code-row .flag {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex: none;
+}
+.code-row .flag.mismatch {
+  background: #d7392d;
+}
+/* 用户自建的色号：图例里没有它是**预期的**，绿色即可，不是告警。 */
+.code-row .flag.custom {
+  background: #2ea043;
+}
+.code-row-counts {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 6px;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.code-row-counts dt {
+  color: #666;
+}
+.code-row-counts dd {
+  margin: 0;
+}
+.code-row-counts dd.fact {
+  font-variant-numeric: tabular-nums;
+}
+.code-row-counts input[type='number'] {
+  width: 5em;
+  font-size: 0.8rem;
+  padding: 0 2px;
+}
+
+.cell-pane-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+@media (max-width: 720px) {
+  /* 窄屏堆成上下，色号栏压矮一点，别把豆点挤出屏幕 */
+  .sheet-review {
+    grid-template-columns: 1fr;
+  }
+  .code-column {
+    max-height: 40vh;
+  }
 }
 
 /* canvas 和勾选层必须在**同一个贴合 canvas 尺寸**的容器里。
