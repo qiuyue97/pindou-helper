@@ -35,6 +35,9 @@ export interface SheetReviewProps {
  *   左边改数量 -> 只改「图纸说有多少」，不动任何豆点
  *   右边改豆点 -> 那几个豆点移出当前色号，进入目标色号；目标色号图例里没有的话
  *                 自动新开一条，标绿（那是用户确认过的，不是错误）
+ *
+ * 改动是**一次性**的：改完就是新的现状，和一开始就识别成这样没有区别。所以豆点
+ * 上不留任何「这一格被改过」的标记，也不给回退渠道——要改回去就再改一次色号。
  */
 export default function SheetReview({
   sheet,
@@ -293,12 +296,11 @@ function CellPane({
           {pageCells.map((flat) => {
             const r = Math.floor(flat / cols);
             const c = flat % cols;
-            const edited = sheet.overrides[`${r},${c}`] !== undefined;
             const on = picked.has(flat);
             return (
               <span
                 key={flat}
-                className={`cell-hit${edited ? ' edited' : ''}${on ? ' picked' : ''}`}
+                className={`cell-hit${on ? ' picked' : ''}`}
               >
                 <input
                   type="checkbox"

@@ -261,7 +261,9 @@ it('改进来的豆点出现在目标色号下', () => {
   expect(screen.getByText('共 1 个豆点')).toBeInTheDocument();
 });
 
-it('人工改过的豆点标出来，但不给回退按钮', () => {
+it('改过的豆点不做任何标记，也不给回退', () => {
+  // 改动是一次性的：改完就是新的现状，和一开始就识别成这样没有区别。
+  // 要改回去就再改一次色号。
   const { container } = render(
     <SheetReview
       sheet={makeSheet({ overrides: { '0,1': 'H15' } })}
@@ -270,8 +272,7 @@ it('人工改过的豆点标出来，但不给回退按钮', () => {
       onPatchCells={vi.fn()}
     />,
   );
-  expect(container.querySelectorAll('.cell-hit.edited')).toHaveLength(1);
-  // 要改回去就再改一次色号，不需要一个专门的撤销按钮堆在格子上
+  expect(container.querySelectorAll('.cell-hit.edited')).toHaveLength(0);
   expect(screen.queryByRole('button', { name: /撤销/ })).toBeNull();
 });
 
