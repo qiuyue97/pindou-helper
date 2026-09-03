@@ -18,8 +18,6 @@ export interface ExportCell {
 export interface ExportOptions {
   /** 每格多少像素。太小了色号印不下，太大了文件没必要 */
   cell?: number;
-  /** 标尺宽度 */
-  ruler?: number;
   /** 整张图的宽度上限，超了就自动缩小格子 */
   maxWidth?: number;
 }
@@ -30,15 +28,7 @@ export interface LegendEntry {
   count: number;
 }
 
-const DEFAULTS = { cell: 32, ruler: 26, maxWidth: 8000 };
-
-/** 每几格标一次坐标。全标出来在 104 列上会糊成一片。 */
-function tickStep(n: number): number {
-  if (n <= 30) return 1;
-  if (n <= 60) return 2;
-  if (n <= 120) return 5;
-  return 10;
-}
+const DEFAULTS = { cell: 32, maxWidth: 8000 };
 
 /** 底部汇总每行放几项，按图宽自适应。 */
 const LEGEND_W = 150;
@@ -46,10 +36,9 @@ const LEGEND_H = 44;
 
 export interface Layout {
   cell: number;
-  ruler: number;
-  /** 外圈那一格有多宽。和格子同宽，于是外圈的格子和图纸的格子一一对齐。 */
+  /** 外圈坐标那一格有多宽。和格子同宽，外圈和图纸一一对齐。 */
   ring: number;
-  /** 网格左上角离画布边的距离 = 外圈 + 标尺。 */
+  /** 网格左上角离画布边的距离。只有外圈那一圈，所以 = ring。 */
   pad: number;
   width: number;
   height: number;
@@ -66,25 +55,22 @@ export function layout(
   legendCount: number,
   opts: ExportOptions = {},
 ): Layout {
-  const ruler = opts.ruler ?? DEFAULTS.ruler;
   const maxWidth = opts.maxWidth ?? DEFAULTS.maxWidth;
   let cell = opts.cell ?? DEFAULTS.cell;
-  // 大图纸（104 列）按默认格子会到 3.4k 宽，还能接受；再大就缩格子而不是裁内容
-  // 外圈占一整格宽，所以总宽是 (cols + 2) 格加上两条标尺
-  if ((cols + 2) * cell + ruler * 2 > maxWidth) {
-    cell = Math.max(8, Math.floor((maxWidth - ruler * 2) / Math.max(1, cols + 2)));
+  // 外圈占一整格宽，所以总宽是 (cols + 2) 格；超了就缩格子而不是裁内容。
+  if ((cols + 2) * cell > maxWidth) {
+    cell = Math.max(8, Math.floor(maxWidth / Math.max(1, cols + 2)));
   }
   const gridW = cols * cell;
   const gridH = rows * cell;
   const ring = cell;
-  const pad = ruler + ring;
+  const pad = ring;
   const width = gridW + pad * 2;
   const legendCols = Math.max(1, Math.floor(width / LEGEND_W));
   const legendRows = Math.ceil(legendCount / legendCols);
   const legendTop = gridH + pad * 2 + 12;
   return {
     cell,
-    ruler,
     ring,
     pad,
     width,
@@ -203,8 +189,7 @@ export function drawSheet(
 ): void {
   const { rows, cols, cells, legend } = params;
   const focus = params.focus?.size ? params.focus : null;
-  const { cell, ruler, ring, pad, width, height, gridW, gridH, legendTop, legendCols } =
-    params.layout;
+  const { cell, ring, pad, width, height, gridW, gridH, legendTop, legendCols } = params.layout;
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, width, height);
@@ -272,31 +257,14 @@ export function drawSheet(
     ctx.stroke();
   }
 
-  // --- 四边标尺 ---
-  ctx.fillStyle = '#333';
-  ctx.font = `${Math.max(8, Math.floor(ruler * 0.42))}px system-ui, sans-serif`;
-  const stepC = tickStep(cols);
-  const stepR = tickStep(rows);
-  for (let c = 0; c < cols; c += 1) {
-    if ((c + 1) % stepC) continue;
-    const x = pad + c * cell + cell / 2;
-    ctx.fillText(String(c + 1), x, ring + ruler / 2);
-    ctx.fillText(String(c + 1), x, pad + gridH + ruler / 2);
-  }
-  for (let r = 0; r < rows; r += 1) {
-    if ((r + 1) % stepR) continue;
-    const y = pad + r * cell + cell / 2;
-    ctx.fillText(String(r + 1), ring + ruler / 2, y);
-    ctx.fillText(String(r + 1), pad + gridW + ruler / 2, y);
-  }
-
-  // --- 最外面那一圈：逐格坐标 ---
+  // --- 四边坐标：外圈**逐格**一个数字 ---
+  //
+  // 只有这一圈。之前中间还有一圈每 5 格一标的粗刻度，和逐格圈挨在一起又挤又乱，
+  // 去掉了——逐格圈本身就够定位，还能一格一格对着拼。
   //
   // 上降序、下升序、左降序、右升序 —— 于是**最大的数落在左上和右下**这两个对角。
   // 数格子的时候从哪一边起手都有一个满格基准，不必每次从 1 数到 104。
-  //
-  // 和中间那圈每 5 格一标的标尺是两回事：那个是快速定位用的粗刻度，这一圈是
-  // 每格都有、照着拼时一格一格对的。
+  ctx.fillStyle = '#333';
   ctx.font = `${Math.max(6, Math.floor(cell * 0.36))}px system-ui, sans-serif`;
   ctx.textAlign = 'center';
   for (let c = 0; c < cols; c += 1) {

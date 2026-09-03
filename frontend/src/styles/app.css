@@ -647,9 +647,22 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .preview-zoom span {
   font-variant-numeric: tabular-nums;
 }
-/* 1 倍完整显示（overflow/max-height 由组件按 zoom 现设）；放大后才变成滚动取景框。 */
+/* 取景框：尺寸恒定（高由组件设成 1 倍时的图纸高），1 倍 hidden 不出条，
+   放大后 auto 可滚动 + 拖动平移。overflow / cursor / height 都在组件里按 zoom 设。 */
+/* 预览冲破 .app 的 1100 宽，用到 ~94vw，图纸格子才够看清。 */
+.preview-wrap {
+  width: 94vw;
+  max-width: 1600px;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0.5rem 0;
+}
 .preview-scroll {
+  border: 1px solid rgba(0, 0, 0, 0.15);
   border-radius: 4px;
+  background: #fff;
+  overscroll-behavior: contain;
 }
 
 /* 按色号突出显示：选中的照常画，其余的调低透明度。 */

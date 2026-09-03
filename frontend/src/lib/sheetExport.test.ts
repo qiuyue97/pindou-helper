@@ -68,16 +68,16 @@ function ctxStub() {
 }
 
 describe('layout', () => {
-  it('留出四边标尺的位置，外加最外一圈逐格坐标（各占一格宽）', () => {
-    const l = layout(10, 10, 3, { cell: 32, ruler: 26 });
+  it('只有最外一圈逐格坐标（占一格宽），没有中间的粗刻度', () => {
+    const l = layout(10, 10, 3, { cell: 32 });
     expect(l.ring).toBe(32);
-    expect(l.pad).toBe(26 + 32);
-    expect(l.width).toBe(10 * 32 + (26 + 32) * 2);
+    expect(l.pad).toBe(32); // 外圈就是全部，没有额外的标尺带
+    expect(l.width).toBe((10 + 2) * 32);
     expect(l.gridH).toBe(320);
   });
 
   it('大图纸缩格子而不是裁内容', () => {
-    const l = layout(104, 104, 97, { cell: 32, ruler: 26, maxWidth: 1000 });
+    const l = layout(104, 104, 97, { cell: 32, maxWidth: 1000 });
     expect(l.width).toBeLessThanOrEqual(1000);
     expect(l.cell).toBeLessThan(32);
     expect(l.gridW).toBe(104 * l.cell);
@@ -89,8 +89,8 @@ describe('layout', () => {
   });
 
   it('底部汇总按图宽换行，高度跟着长', () => {
-    const narrow = layout(10, 10, 40, { cell: 32, ruler: 26 });
-    const wide = layout(10, 60, 40, { cell: 32, ruler: 26 });
+    const narrow = layout(10, 10, 40, { cell: 32 });
+    const wide = layout(10, 60, 40, { cell: 32 });
     expect(narrow.legendRows).toBeGreaterThan(wide.legendRows);
     expect(narrow.height).toBeGreaterThan(narrow.legendTop);
   });
@@ -137,7 +137,7 @@ describe('drawSheet', () => {
 
   function draw(rows: number, cols: number, codes: (string | null)[], leg = legend) {
     const ctx = ctxStub();
-    const lay = layout(rows, cols, leg.length, { cell: 32, ruler: 26 });
+    const lay = layout(rows, cols, leg.length, { cell: 32 });
     drawSheet(ctx, { rows, cols, cells: cells(codes), legend: leg, layout: lay });
     return { ctx, lay };
   }
@@ -156,7 +156,7 @@ describe('drawSheet', () => {
 
   it('字的颜色跟着底色走，不会白底白字', () => {
     const ctx = ctxStub();
-    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    const lay = layout(1, 2, 0, { cell: 32 });
     drawSheet(ctx, {
       rows: 1,
       cols: 2,
@@ -212,11 +212,11 @@ describe('drawSheet', () => {
     expect(bottomRightMost).toContain(8);
   });
 
-  it('外圈每一格都有号，不像中间那圈标尺隔几格才标一次', () => {
+  it('外圈每一格都有号（100 列 -> 上下各 100 个），没有别的刻度', () => {
     const { ctx } = draw(1, 100, Array(100).fill(null), []);
     const ticks = ctx.texts.map((t) => Number(t.text)).filter((n) => !Number.isNaN(n));
-    // 外圈上下各 100 个 + 左右各 1 个，远超「隔 5 格标一次」的量
-    expect(ticks.length).toBeGreaterThanOrEqual(200);
+    // 上下各 100 + 左右各 1 = 202，一个不多一个不少
+    expect(ticks.length).toBe(202);
   });
 
   it('底部汇总每项有色块、色号和数量', () => {
@@ -240,7 +240,7 @@ describe('drawSheet', () => {
 
   it('没选色号时一切照常', () => {
     const ctx = ctxStub();
-    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    const lay = layout(1, 2, 0, { cell: 32 });
     drawSheet(ctx, {
       rows: 1,
       cols: 2,
@@ -257,7 +257,7 @@ describe('drawSheet', () => {
 
   it('没选中的格子既调暗、又叠透明——两步缺一不可', () => {
     const ctx = ctxStub();
-    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    const lay = layout(1, 2, 0, { cell: 32 });
     drawSheet(ctx, {
       rows: 1,
       cols: 2,
@@ -281,7 +281,7 @@ describe('drawSheet', () => {
 
   it('没选中的格子不印色号——满屏灰字比颜色还抢眼', () => {
     const ctx = ctxStub();
-    const lay = layout(1, 2, 0, { cell: 32, ruler: 26 });
+    const lay = layout(1, 2, 0, { cell: 32 });
     drawSheet(ctx, {
       rows: 1,
       cols: 2,

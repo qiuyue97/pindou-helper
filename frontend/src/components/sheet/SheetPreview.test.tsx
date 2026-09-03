@@ -166,5 +166,5 @@ it('1 倍时完整显示，不出滚动条；放大后才变成滚动取景框',
 
   fireEvent.wheel(scroll, { deltaY: -240 });
   expect(scroll.style.overflow).toBe('auto');
-  expect(scroll.style.maxHeight).toBe('80vh');
-})
+  expect(scroll.style.height).toBe('80vh');
+});

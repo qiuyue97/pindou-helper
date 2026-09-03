@@ -4,19 +4,12 @@ import { drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
 import { byCode } from '../../lib/sheetSort';
 import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
 
-/**
- * 1 倍时屏幕上显示的图纸宽度。
- *
- * 下载用 8000（104 列还能有 32px 的格子，色号印得清清楚楚）；屏幕上 1 倍没必要
- * 那么大——一张 104x104 的图按 32px 是 3.4k 宽、上万次 fillText，每改一个豆点都
- * 重画一遍会明显卡顿。**格式和下载完全一样**：同一个 drawSheet、同一份绘制参数，
- * 只有格子尺寸不同。
- */
-const PREVIEW_BASE_WIDTH = 1400;
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 6;
-
 const clamp = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
+
+/** 放大后取景框的高度（1 倍时不限高，整张往下铺，页面自己滚）。 */
+const ZOOMED_VIEWPORT_H = '80vh';
 
 /**
  * 图纸预览：和「下载图纸」用**同一个渲染器**画出来的同一张图。
@@ -25,39 +18,71 @@ const clamp = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
  * 文件却是别的东西。现在共用 sheetToDrawing + drawSheet，想不一致都难。
  *
  * 缩放和 GridConfirm 一个路子：**滚轮**（桌面）/**双指捏合**（触摸），没有 +/-
- * 按钮。但这里是**重画**不是 CSS 变换——放大时按更大的格子重新跑 layout，canvas
- * 的像素数跟着涨，所以怎么放都清晰；平移交给外层滚动容器。CSS 拉伸一张位图只会
- * 越拉越糊。
+ * 按钮，放大后**按住拖动平移**。这里是**重画**不是 CSS 变换——按更大的格子重跑
+ * layout，canvas 的像素数跟着涨，所以怎么放都清晰。
  *
- * 每次改动（改整类、改豆点、改图纸数量）都会重画：`sheet` 一变，useMemo 重算，
- * effect 重跑。
+ * 尺寸策略：
+ *   - 预览框**冲破** .app 的 1100 宽，用到视口 ~94vw，图纸大格子够看清。
+ *   - 只按宽度收（fit width），**高度随它去**——图纸长一点无所谓，1 倍时整张往下
+ *     铺、页面正常滚。这样 canvas 永远自然像素、从不 CSS 缩放。
+ *   - 放大后才把框钉成 80vh 的滚动取景框，滚轮 + 拖动都能平移。跨 1↔N 那一下
+ *     会重排，用 scrollBy 把预览顶端拉回原位，页面不跳。
+ *
+ * 每次改动（改整类、改豆点、改图纸数量）都会重画：`sheet` 一变，useMemo 重算。
  */
 export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { byCode: catalogue } = useEffectiveCatalog();
   /** 选中的色号：只画这些，其余调淡。空 = 全部照常。 */
   const [focus, setFocus] = useState<Set<string>>(new Set());
   const [zoom, setZoom] = useState(1);
-  /** 缩放后要把滚动条挪到哪，让手指/光标下那一点不动。 */
+  const [availW, setAvailW] = useState(1400);
+  /** 缩放后把滚动条挪到这里，让光标/双指中点那一点不动。 */
   const pendingAnchor = useRef<{ cx: number; cy: number; px: number; py: number } | null>(null);
+  /** 跨 1↔缩放 那一下，用它把预览顶端拉回视口原位。 */
+  const keepWrapTop = useRef<number | null>(null);
 
   const drawing = useMemo(
     () => sheetToDrawing(sheet, (code) => catalogue.get(code)?.hex, byCode),
     [sheet, catalogue],
   );
-  const lay = useMemo(() => {
-    // 1 倍 = 收进 PREVIEW_BASE_WIDTH（大图纸会自动缩小格子）。放大就是把这个
-    // 格子尺寸乘上去，maxWidth 放开到下载的 8000 上限，让它真的按更大的像素重画。
-    const base = layout(sheet.rows, sheet.cols, drawing.legend.length, {
-      maxWidth: PREVIEW_BASE_WIDTH,
-    });
-    if (zoom === 1) return base;
-    return layout(sheet.rows, sheet.cols, drawing.legend.length, {
-      cell: base.cell * zoom,
-      maxWidth: 8000,
-    });
-  }, [sheet.rows, sheet.cols, drawing.legend.length, zoom]);
+  const legendLen = drawing.legend.length;
+
+  // 可用宽度：预览框自己的宽（它已经被 CSS 撑到 ~94vw）。
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const read = () => {
+      const w = el.clientWidth || 1400;
+      setAvailW((p) => (Math.abs(p - w) < 1 ? p : w));
+    };
+    read();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', read);
+      return () => window.removeEventListener('resize', read);
+    }
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // 1 倍：只按宽度收，高度随它。
+  const base = useMemo(
+    () => layout(sheet.rows, sheet.cols, legendLen, { maxWidth: availW }),
+    [sheet.rows, sheet.cols, legendLen, availW],
+  );
+  const lay = useMemo(
+    () =>
+      zoom === 1
+        ? base
+        : layout(sheet.rows, sheet.cols, legendLen, {
+            cell: base.cell * zoom,
+            maxWidth: 8000,
+          }),
+    [base, zoom, sheet.rows, sheet.cols, legendLen],
+  );
 
   useEffect(() => {
     const ctx = ref.current?.getContext('2d');
@@ -72,23 +97,32 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     });
   }, [sheet.rows, sheet.cols, drawing, lay, focus]);
 
-  // 缩放后把滚动位置挪回去，让锚点（光标 / 双指中点）停在原地
+  // 缩放后：先把预览顶端拉回原位（跨 1↔N 那一下框会重排），再把取景框滚到锚点。
   useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (wrap && keepWrapTop.current !== null) {
+      const now = wrap.getBoundingClientRect().top;
+      window.scrollBy(0, now - keepWrapTop.current);
+      keepWrapTop.current = null;
+    }
     const el = scrollRef.current;
     const a = pendingAnchor.current;
-    if (!el || !a) return;
-    pendingAnchor.current = null;
-    el.scrollLeft = a.cx - a.px;
-    el.scrollTop = a.cy - a.py;
+    if (el && a) {
+      pendingAnchor.current = null;
+      el.scrollLeft = a.cx - a.px;
+      el.scrollTop = a.cy - a.py;
+    }
   }, [zoom]);
 
-  /** 以容器内 (px, py) 为锚点缩放。内容尺寸随 zoom 近似线性，所以内容坐标乘同一个比例。 */
   function zoomAround(factor: number, px: number, py: number) {
     const el = scrollRef.current;
     if (!el) return;
     setZoom((z) => {
       const nz = clamp(z * factor);
       if (nz === z) return z;
+      if ((z === 1) !== (nz === 1)) {
+        keepWrapTop.current = wrapRef.current?.getBoundingClientRect().top ?? null;
+      }
       const ratio = nz / z;
       pendingAnchor.current = {
         cx: (el.scrollLeft + px) * ratio,
@@ -101,7 +135,7 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   }
 
   // 滚轮缩放。React 的 onWheel 是被动监听，preventDefault 无效（页面会跟着滚），
-  // 自己挂一个非被动的。和 GridConfirm 同一套。
+  // 自己挂一个非被动的。
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -114,7 +148,7 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  // 双指捏合
+  // 一根指头/按住左键（放大后）拖着平移，两根指头捏合缩放。
   const pts = useRef(new Map<number, [number, number]>());
   const pinchDist = useRef<number | null>(null);
   function onPointerDown(e: React.PointerEvent) {
@@ -122,30 +156,43 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     if (pts.current.size === 2) {
       const [a, b] = [...pts.current.values()];
       pinchDist.current = Math.hypot(a![0] - b![0], a![1] - b![1]);
+    } else if (zoom > 1) {
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
   }
   function onPointerMove(e: React.PointerEvent) {
-    if (!pts.current.has(e.pointerId)) return;
+    const prev = pts.current.get(e.pointerId);
+    if (!prev) return;
     pts.current.set(e.pointerId, [e.clientX, e.clientY]);
-    if (pts.current.size < 2 || pinchDist.current === null) return;
-    const [a, b] = [...pts.current.values()];
-    const d = Math.hypot(a![0] - b![0], a![1] - b![1]);
-    const from = pinchDist.current;
-    if (d > 0 && from > 0) {
-      const el = scrollRef.current!;
-      const rect = el.getBoundingClientRect();
-      zoomAround(d / from, (a![0] + b![0]) / 2 - rect.left, (a![1] + b![1]) / 2 - rect.top);
+    const el = scrollRef.current;
+    if (!el) return;
+
+    if (pts.current.size >= 2 && pinchDist.current !== null) {
+      const [a, b] = [...pts.current.values()];
+      const d = Math.hypot(a![0] - b![0], a![1] - b![1]);
+      const from = pinchDist.current;
+      if (d > 0 && from > 0) {
+        const rect = el.getBoundingClientRect();
+        zoomAround(d / from, (a![0] + b![0]) / 2 - rect.left, (a![1] + b![1]) / 2 - rect.top);
+      }
+      pinchDist.current = d;
+      return;
     }
-    pinchDist.current = d;
+
+    if (zoom > 1) {
+      el.scrollLeft -= e.clientX - prev[0];
+      el.scrollTop -= e.clientY - prev[1];
+    }
   }
   function onPointerUp(e: React.PointerEvent) {
     pts.current.delete(e.pointerId);
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     if (pts.current.size < 2) pinchDist.current = null;
   }
 
   if (!sheet.rows || !sheet.cols) return null;
   return (
-    <>
+    <div ref={wrapRef} className="preview-wrap">
       <div className="preview-zoom">
         <span>{zoom === 1 ? '滚轮或双指缩放' : `${Math.round(zoom * 100)}%`}</span>
         {zoom !== 1 && (
@@ -155,16 +202,18 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
         )}
       </div>
 
-      {/* 1 倍时**完整显示**，不出滚动条——整张图收进容器宽度就够看了。放大之后
-          画布比容器大，这时才变成可滚动的取景框，滚动来平移。
-          touch-action: none 让双指手势不被浏览器抢去做页面缩放。 */}
       <div
         ref={scrollRef}
         className="preview-scroll"
         style={
           zoom === 1
-            ? { overflow: 'visible', maxHeight: 'none', touchAction: 'pan-x pan-y' }
-            : { overflow: 'auto', maxHeight: '80vh', touchAction: 'none' }
+            ? { overflow: 'visible', touchAction: 'auto', cursor: 'default' }
+            : {
+                height: ZOOMED_VIEWPORT_H,
+                overflow: 'auto',
+                touchAction: 'none',
+                cursor: 'grab',
+              }
         }
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -176,12 +225,7 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
           aria-label="完整图纸"
           width={lay.width}
           height={lay.height}
-          style={{
-            display: 'block',
-            maxWidth: zoom === 1 ? '100%' : 'none',
-            height: 'auto',
-            border: '1px solid rgba(0,0,0,0.15)',
-          }}
+          style={{ display: 'block', maxWidth: zoom === 1 ? '100%' : 'none' }}
         />
       </div>
 
@@ -215,6 +259,6 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
           </button>
         )}
       </div>
-    </>
+    </div>
   );
 }
