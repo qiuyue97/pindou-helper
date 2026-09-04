@@ -3,11 +3,25 @@ import { apiUpload } from '../../api/client';
 import type { SheetGuess } from '../../api/types';
 import { useToast } from '../../state/ToastContext';
 
-/** 一次只收一张图：角点拖拽的界面天然是单图。 */
+/**
+ * 一次只收一张图：角点拖拽的界面天然是单图。
+ *
+ * 「上传图纸」和「生成图纸」共用这一个：两边差的只是标题、说明，以及**要不要跑
+ * 点阵检测**——照片上没有点阵可找，白跑一趟还会给出一个莫名其妙的初始框。
+ */
 export default function SheetUpload({
   onUploaded,
+  id = 'sheet-file',
+  title = '上传图纸',
+  hint = '一次一张。支持生成器导出的规整图片；手机拍的照片暂不支持。',
+  detect = true,
 }: {
   onUploaded: (g: SheetGuess) => void;
+  id?: string;
+  title?: string;
+  hint?: string;
+  /** false = 跳过点阵检测。生成图纸走这条。 */
+  detect?: boolean;
 }) {
   const { show } = useToast();
   const [busy, setBusy] = useState(false);
@@ -18,6 +32,7 @@ export default function SheetUpload({
     try {
       const form = new FormData();
       form.append('file', file);
+      form.append('detect', String(detect));
       onUploaded(await apiUpload<SheetGuess>('/api/sheets', form));
     } catch (e) {
       show(e instanceof Error ? e.message : '上传失败');
@@ -32,10 +47,10 @@ export default function SheetUpload({
           「上传图纸 选择文件 未选择任何文件」连成一条，既看不出层次，手机上
           还会被挤断。原生控件的按钮和文件名是同一个 shadow DOM，拆不开——
           所以把它藏起来，自己画一个按钮和一行文件名。 */}
-      <h3>上传图纸</h3>
+      <h3>{title}</h3>
       <input
-        id="sheet-file"
-        aria-label="上传图纸"
+        id={id}
+        aria-label={title}
         className="offscreen"
         type="file"
         accept="image/*"
@@ -47,11 +62,11 @@ export default function SheetUpload({
           void pick(f);
         }}
       />
-      <label htmlFor="sheet-file" className={`file-button${busy ? ' is-busy' : ''}`}>
+      <label htmlFor={id} className={`file-button${busy ? ' is-busy' : ''}`}>
         {busy ? '上传中…' : '选择文件'}
       </label>
       <p className="muted file-name">{name || '未选择任何文件'}</p>
-      <p className="muted">一次一张。支持生成器导出的规整图片；手机拍的照片暂不支持。</p>
+      <p className="muted">{hint}</p>
     </section>
   );
 }

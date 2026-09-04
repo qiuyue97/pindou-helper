@@ -359,6 +359,24 @@ class RecogniseIn(BaseModel):
     palette: Literal["221", "291"] = "221"
 
 
+class GenerateIn(BaseModel):
+    """用户框好的裁剪区 + 想要的豆阵尺寸。
+
+    和 `RecogniseIn` 长得像但**不是一回事**：那边的 rect 是「图纸上的豆阵在哪」，
+    这边的 rect 是「照片上我要哪一块」。这边也没有 has_blanks——生成出来的每一格
+    都有豆子。
+    """
+
+    rect: list[float] = Field(min_length=4, max_length=4)
+    rows: int = Field(ge=1)
+    cols: int = Field(ge=1)
+    palette: Literal["221", "291"] = "221"
+    #: slic = 轮廓优先（格子边界顺着轮廓弯）；dpid = 细节优先（细密纹理留得住）
+    style: Literal["slic", "dpid"] = "slic"
+    #: 去掉四邻都不同的孤立单豆。它们视觉上是噪点，实物上还要单买一整包。
+    clean: bool = True
+
+
 class ClassPatch(BaseModel):
     k: int
     code: str

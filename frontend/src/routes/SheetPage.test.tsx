@@ -106,7 +106,7 @@ it('普通账号看得见入口，点了给升级提示', () => {
   vip = false;
   show();
   expect(screen.getByText(/请升级VIP/)).toBeInTheDocument();
-  expect(screen.queryByLabelText('选择图纸')).toBeNull();
+  expect(screen.queryByLabelText('上传图纸')).toBeNull();
 });
 
 it('一开始只有上传', () => {
@@ -315,4 +315,79 @@ it('接着确认时把几何发到这张图纸上', async () => {
   show(1);
   fireEvent.click(await screen.findByRole('button', { name: '开始识别' }));
   await waitFor(() => expect(lastRequest('POST', '/api/sheets/1/recognise')).toBeTruthy());
+});
+
+
+// ---------- 生成图纸 ----------
+
+const SEED = {
+  id: 9, width: 400, height: 400, rect: [0, 0, 400, 400],
+  rows: 0, cols: 0, snap_x: [], snap_y: [], source: 'manual',
+};
+
+it('「生成图纸」夹在「上传图纸」和「我的图纸」中间', async () => {
+  mockFetch({ 'GET /api/sheets': { body: { sheets: [sheet({ id: 7 })], running: 0 } } });
+  show();
+  await screen.findByText('我的图纸');
+  expect(screen.getAllByRole('heading').map((h) => h.textContent)).toEqual([
+    '上传图纸', '生成图纸', '我的图纸',
+  ]);
+});
+
+it('生成那条路上传时不跑点阵检测——照片上没有点阵可找', async () => {
+  mockFetch({
+    'GET /api/sheets': { body: { sheets: [], running: 0 } },
+    'POST /api/sheets': { body: SEED, status: 201 },
+  });
+  show();
+  fireEvent.change(await screen.findByLabelText('生成图纸'), {
+    target: { files: [new File(['x'], 'p.png', { type: 'image/png' })] },
+  });
+  await screen.findByLabelText('框选范围');
+  const body = lastRequest('POST', '/api/sheets')!.init!.body as FormData;
+  expect(body.get('detect')).toBe('false');
+});
+
+it('识别那条路照旧跑检测', async () => {
+  mockFetch({
+    'GET /api/sheets': { body: { sheets: [], running: 0 } },
+    'POST /api/sheets': { body: { ...SEED, source: 'lattice', rows: 20, cols: 20 }, status: 201 },
+  });
+  show();
+  fireEvent.change(await screen.findByLabelText('上传图纸'), {
+    target: { files: [new File(['x'], 'g.png', { type: 'image/png' })] },
+  });
+  await screen.findByLabelText('网格范围');
+  const body = lastRequest('POST', '/api/sheets')!.init!.body as FormData;
+  expect(body.get('detect')).toBe('true');
+});
+
+it('框好之后开始生成，参数一并送上去', async () => {
+  mockFetch({
+    'GET /api/sheets': { body: { sheets: [], running: 0 } },
+    'POST /api/sheets': { body: SEED, status: 201 },
+    'POST /api/sheets/9/generate': { body: {}, status: 202 },
+    'GET /api/sheets/9': { body: sheet({ id: 9, status: 'running' }) },
+  });
+  show();
+  fireEvent.change(await screen.findByLabelText('生成图纸'), {
+    target: { files: [new File(['x'], 'p.png', { type: 'image/png' })] },
+  });
+  await screen.findByLabelText('框选范围');
+  fireEvent.change(screen.getByLabelText('列数'), { target: { value: '80' } });
+  fireEvent.click(screen.getByRole('button', { name: '生成图纸' }));
+
+  await waitFor(() => expect(lastRequest('POST', '/api/sheets/9/generate')).toBeTruthy());
+  const sent = JSON.parse(String(lastRequest('POST', '/api/sheets/9/generate')!.init!.body));
+  expect(sent).toMatchObject({ rows: 50, cols: 80, style: 'slic', clean: true });
+  expect(sent.rect).toHaveLength(4);
+});
+
+it('生成出来的图纸不说识别那几句话——它没有图例，也没有「猜」这回事', async () => {
+  mockFetch({
+    'GET /api/sheets/1': { body: sheet({ engine: 'generate/slic' }) },
+  });
+  show(1);
+  expect(await screen.findByText(/轮廓优先/)).toBeInTheDocument();
+  expect(screen.queryByText(/没有拿到图例/)).toBeNull();
 });

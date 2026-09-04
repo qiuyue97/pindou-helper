@@ -8,7 +8,7 @@ import { useAuth } from '../state/AuthContext';
 const TABS = [
   { to: '/', label: '库存', Icon: Boxes, end: true },
   { to: '/match', label: '配色', Icon: Palette, end: false },
-  { to: '/sheet', label: '图纸识别', Icon: Grid3x3, end: false },
+  { to: '/sheet', label: '图纸', Icon: Grid3x3, end: false },
   { to: '/colors', label: '我的色卡', Icon: SwatchBook, end: false },
   { to: '/history', label: '历史', Icon: History, end: false },
 ];

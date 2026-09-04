@@ -16,7 +16,16 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+import numpy as np
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 from fastapi.responses import Response
 from PIL import Image
 from sqlalchemy import select
@@ -33,6 +42,7 @@ from app.models import Sheet, User
 from app.schemas import (
     CellPatchIn,
     ClassPatchIn,
+    GenerateIn,
     PriorIn,
     RecodeIn,
     RecogniseIn,
@@ -42,6 +52,7 @@ from app.schemas import (
     SheetOut,
     SheetSummary,
 )
+from app.sheet import generate as gen
 from app.sheet import pipeline
 from app.sheet.decide import ClassRecord
 from app.sheet.matrix import (
@@ -102,6 +113,7 @@ def _row(s: Sheet) -> SheetOut:
 @router.post("/sheets", response_model=SheetGuessOut, status_code=201)
 async def create_sheet(
     file: UploadFile = File(...),
+    detect: bool = Form(True),
     user: User = Depends(require_vip),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -128,7 +140,9 @@ async def create_sheet(
         raise HTTPException(status_code=422, detail=str(exc)) from None
     h, w = im.shape[:2]
 
-    guess = pipeline.detect(data)
+    # 生成图纸传的是照片，上面没有点阵可找——白跑一趟检测还会给出一个莫名其妙的
+    # 初始框，不如直接给整图。
+    guess = pipeline.detect(data) if detect else None
     stored = save_upload(settings.upload_dir, user.id,
                          file.filename or "sheet.png", data)
 
@@ -288,6 +302,131 @@ def start_recognise(
         target=_run,
         args=(sheet.id, data, os.path.basename(sheet.image), geom, settings),
         daemon=True, name=f"sheet-{sheet.id}",
+    ).start()
+    session.refresh(sheet)
+    return _row(sheet)
+
+
+def _generated_classes(idx, de, palette, rows: int, cols: int) -> list[ClassRecord]:
+    """把「每格配了哪颗豆」整理成识别那条线用的同一种类记录。
+
+    生成出来的类没有「读错了」这回事——色号是我们自己挑的，不是 OCR 读的。所以
+    `de` 在这里的含义变了：它是**这个颜色离最近的豆子有多远**，也就是「拼豆里
+    根本没有这个颜色」的程度。大了照样该亮黄灯，那正是用户需要知道的事。
+    """
+    flat_idx, flat_de = idx.reshape(-1), de.reshape(-1)
+    out: list[ClassRecord] = []
+    for k, p in enumerate(sorted(set(flat_idx.tolist()))):
+        where = np.flatnonzero(flat_idx == p)
+        mine = flat_de[where]
+        code = palette.codes[p]
+        out.append(ClassRecord(
+            klass=k, code=code, source="generate", level="ok",
+            de=float(mine.mean()), n=int(where.size),
+            radius=float(mine.max() - mine.min()),
+            rgb=[int(v) for v in palette.rgb[p]],
+            nearest=code, nearest_de=float(mine.mean()),
+            read_full=None, off_list=False, dup=None,
+            cells=[int(v) for v in where],
+        ))
+    return out
+
+
+def _run_generate(sheet_id: int, data: bytes, rect: list[float],
+                  rows: int, cols: int, palette_name: str,
+                  style: str, clean: bool, settings: Settings) -> None:
+    """后台线程。和识别那条线共用状态机（pending/running/done/failed + 进度）。"""
+    maker = get_sessionmaker()
+
+    def update(**fields) -> None:
+        with maker() as session:
+            s = session.get(Sheet, sheet_id)
+            if s is None:
+                return
+            for k, v in fields.items():
+                setattr(s, k, v)
+            session.commit()
+
+    update(status="running", step="排队等前面的图纸", progress=0)
+    with _semaphore(settings):
+        try:
+            im = pipeline.decode_image(data)          # BGR
+            x0, y0, x1, y1 = (round(v) for v in rect)
+            h, w = im.shape[:2]
+            x0, x1 = max(0, min(x0, w - 1)), max(1, min(x1, w))
+            y0, y1 = max(0, min(y0, h - 1)), max(1, min(y1, h))
+            if x1 - x0 < cols or y1 - y0 < rows:
+                raise ValueError("框选的区域比要生成的豆阵还小")
+            crop = im[y0:y1, x0:x1][:, :, ::-1]       # BGR -> RGB
+
+            palette = load_palette(palette_name)
+            idx, de, _lab = gen.generate(
+                crop, rows, cols, palette, style=style, clean=clean,
+                on_step=lambda t, p: update(step=t, progress=p),
+            )
+            records = _generated_classes(idx, de, palette, rows, cols)
+            labels = [0] * (rows * cols)
+            for rec in records:
+                for flat in rec.cells:
+                    labels[flat] = rec.klass
+            counts = reconcile(records, None)
+        except Exception as exc:  # noqa: BLE001 — 线程里任何异常都必须落库
+            log.warning("图纸生成失败 sheet=%s: %s", sheet_id, exc)
+            update(status="failed", step="", progress=0,
+                   error=str(exc)[:300] if isinstance(exc, ValueError) else "生成失败",
+                   finished_at=datetime.now(UTC))
+            return
+
+        update(status="done", labels=labels,
+               classes=[r.as_dict() for r in records],
+               counts=[asdict(c) for c in counts], prior={},
+               engine=f"generate/{style}", structured=True, error="",
+               step="", progress=100, finished_at=datetime.now(UTC))
+        log.info("图纸生成完成 sheet=%s style=%s 色号数=%d",
+                 sheet_id, style, len(records))
+
+
+@router.post("/sheets/{sheet_id}/generate", response_model=SheetOut,
+             status_code=202)
+def start_generate(
+    sheet_id: int,
+    body: GenerateIn,
+    user: User = Depends(require_vip),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> SheetOut:
+    """把框选的那一块照片生成成拼豆图纸。
+
+    产物落在**和识别完全相同的结构里**（labels + classes + counts），所以预览、
+    改色号、导出、按图扣减这些全都原样可用，不用为生成再写一套。
+    """
+    sheet = _own(sheet_id, user, session)
+    if sheet.status in ("pending", "running"):
+        raise HTTPException(status_code=409, detail="这张图正在处理中")
+    if body.rows * body.cols > settings.sheet_max_cells:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{body.rows}x{body.cols} 共 {body.rows * body.cols} 格，"
+                   f"超过上限 {settings.sheet_max_cells}",
+        )
+    try:
+        data = read_upload(settings.upload_dir, sheet.image)
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="图片已不存在") from None
+
+    sheet.rect = list(body.rect)
+    sheet.rows, sheet.cols = body.rows, body.cols
+    sheet.has_blanks, sheet.palette = False, body.palette
+    sheet.status, sheet.error = "pending", ""
+    sheet.step, sheet.progress = "", 0
+    sheet.overrides = {}          # 重新生成会作废之前的人工修正，类的编号变了
+    session.commit()
+
+    threading.Thread(
+        target=_run_generate,
+        args=(sheet.id, data, list(body.rect), body.rows, body.cols,
+              body.palette, body.style, body.clean, settings),
+        daemon=True, name=f"gen-{sheet.id}",
     ).start()
     session.refresh(sheet)
     return _row(sheet)

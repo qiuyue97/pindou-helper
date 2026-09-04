@@ -5,6 +5,7 @@ import { apiSend } from '../api/client';
 import { useSheet, useSheets } from '../api/hooks';
 import type { Sheet, SheetGuess } from '../api/types';
 import BatchDialog from '../components/BatchDialog';
+import CropConfirm, { type GenerateSpec } from '../components/sheet/CropConfirm';
 import GridConfirm, { type Geometry } from '../components/sheet/GridConfirm';
 import SheetExport from '../components/sheet/SheetExport';
 import SheetGallery from '../components/sheet/SheetGallery';
@@ -37,6 +38,8 @@ export default function SheetPage() {
   const id = sheetId ? Number(sheetId) : null;
 
   const [guess, setGuess] = useState<SheetGuess | null>(null);
+  /** 「生成图纸」那条路刚传上来的图。和识别那条互斥——一次只做一件事。 */
+  const [seed, setSeed] = useState<SheetGuess | null>(null);
   const [deducting, setDeducting] = useState(false);
   const { data: sheet } = useSheet(id, isVip);
   // 上传界面上要列出还没弄完的图纸，否则用户切走一次就再也找不回来
@@ -71,6 +74,16 @@ export default function SheetPage() {
     }
   }
 
+  async function generate(sheetId: number, spec: GenerateSpec) {
+    try {
+      await apiSend('POST', `/api/sheets/${sheetId}/generate`, spec);
+      queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+      navigate(`/sheet/${sheetId}`);
+    } catch (e) {
+      show(e instanceof Error ? e.message : '无法开始生成');
+    }
+  }
+
   const beadList = sheet
     ? Object.keys(sheet.tally)
         .sort(byCode)
@@ -80,12 +93,17 @@ export default function SheetPage() {
 
   return (
     <main className="app-main sheet-page">
-      {id === null && !guess && (
+      {id === null && !guess && !seed && (
         <>
+          <SheetUpload onUploaded={setGuess} />
+          {/* 生成图纸夹在「上传图纸」和「我的图纸」中间：它和上传是并列的两个
+              入口，产物都进同一个列表。 */}
           <SheetUpload
-            onUploaded={(g) => {
-              setGuess(g);
-            }}
+            id="gen-file"
+            title="生成图纸"
+            hint="把任意一张图片切成拼豆图纸。传完之后框一块、定好豆阵大小就行。"
+            detect={false}
+            onUploaded={setSeed}
           />
           <SheetGallery sheets={recent?.sheets ?? []} />
         </>
@@ -93,6 +111,10 @@ export default function SheetPage() {
 
       {id === null && guess && (
         <GridConfirm guess={guess} onConfirm={(g) => void start(guess.id, g)} />
+      )}
+
+      {id === null && seed && (
+        <CropConfirm guess={seed} onConfirm={(g) => void generate(seed.id, g)} />
       )}
 
       {/* 传完图没确认就切走的，回来还得能接着确认。这一状态原来没有任何分支，
@@ -160,6 +182,24 @@ export default function SheetPage() {
 /** 把这次识别到底发生了什么如实说清楚。 */
 function Notices({ sheet }: { sheet: Sheet }) {
   const notes: string[] = [];
+  // 生成出来的图纸没有「识别」这回事：色号是照着照片挑的，不是读出来的，也没有
+  // 图例可以对账。识别那几条提示照搬过来只会让人以为出了问题。
+  if (sheet.engine.startsWith('generate/')) {
+    notes.push(
+      sheet.engine.endsWith('slic')
+        ? '这张是按「轮廓优先」生成的：格子边界会顺着图像轮廓走，边缘干净。'
+        : '这张是按「快速」生成的。边缘会比「轮廓优先」糊一档——想要更干净的边，'
+          + '可以重新生成一次，生成方式选「轮廓优先」。',
+    );
+    notes.push('每一格的色号是照着照片配的最近色，可以在下面逐格或整类改。');
+    return (
+      <ul className="sheet-notices">
+        {notes.map((n) => (
+          <li key={n}>{n}</li>
+        ))}
+      </ul>
+    );
+  }
   if (!sheet.structured) {
     notes.push(
       '这张图没有颜色结构：格子太小或有水印，填充色是一段连续的渐变而不是几十个' +
