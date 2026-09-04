@@ -20,6 +20,17 @@ export interface ExportOptions {
   cell?: number;
   /** 整张图的宽度上限，超了就自动缩小格子 */
   maxWidth?: number;
+  /**
+   * 缩到不能再缩的格子大小。导出留 8——再小连轮廓都糊了；预览可以给到 2，
+   * 因为**预览必须在一屏内看全**：手机上一百来列摊在 320 像素里，格子只能是
+   * 三四个像素，卡在 8 上就会被取景框裁掉右边一大截。
+   */
+  minCell?: number;
+  /**
+   * 画不画最外圈的逐格坐标。导出要（false 之外都要）；预览**不要**——预览把
+   * 外圈做成了跟着视野走的贴边浮层，画在图上的那圈一放大就滚没了。
+   */
+  ring?: boolean;
 }
 
 export interface LegendEntry {
@@ -28,7 +39,7 @@ export interface LegendEntry {
   count: number;
 }
 
-const DEFAULTS = { cell: 32, maxWidth: 8000 };
+const DEFAULTS = { cell: 32, maxWidth: 8000, minCell: 8 };
 
 /** 底部汇总每行放几项，按图宽自适应。 */
 const LEGEND_W = 150;
@@ -56,14 +67,18 @@ export function layout(
   opts: ExportOptions = {},
 ): Layout {
   const maxWidth = opts.maxWidth ?? DEFAULTS.maxWidth;
+  const minCell = Math.max(1, opts.minCell ?? DEFAULTS.minCell);
+  const withRing = opts.ring !== false;
+  // 外圈占一整格宽，所以带外圈时总宽是 (cols + 2) 格。
+  const span = cols + (withRing ? 2 : 0);
   let cell = opts.cell ?? DEFAULTS.cell;
-  // 外圈占一整格宽，所以总宽是 (cols + 2) 格；超了就缩格子而不是裁内容。
-  if ((cols + 2) * cell > maxWidth) {
-    cell = Math.max(8, Math.floor(maxWidth / Math.max(1, cols + 2)));
+  // 超了就缩格子而不是裁内容。
+  if (span * cell > maxWidth) {
+    cell = Math.max(minCell, Math.floor(maxWidth / Math.max(1, span)));
   }
   const gridW = cols * cell;
   const gridH = rows * cell;
-  const ring = cell;
+  const ring = withRing ? cell : 0;
   const pad = ring;
   const width = gridW + pad * 2;
   const legendCols = Math.max(1, Math.floor(width / LEGEND_W));
@@ -95,6 +110,28 @@ function ringCell(ctx: CanvasRenderingContext2D, x: number, y: number,
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   ctx.fillStyle = '#333';
   ctx.fillText(text, x + w / 2, y + h / 2);
+}
+
+/**
+ * 这一格该用多大的字印色号；返回 0 表示**别印**。
+ *
+ * 手机上格子只有三四个像素宽，原来是 `max(7, cell*0.38)` 硬印——字比格子还宽，
+ * 一整片墨点糊在一起，图案本身反而看不见了（用户原话「很花」）。现在是：想要的
+ * 字号和塞得下的字号取小，小于 6 像素就干脆不印，放大到装得下自然就出来。
+ *
+ * 宽度用**估算**（system-ui 的数字和大写字母约是字号的 0.62 倍）而不是
+ * measureText：纯算术，没有 canvas 的地方（测试）也算得出同一个结果。
+ */
+const CHAR_W = 0.62;
+const MIN_FONT = 6;
+/** 格子小于这个就不画逐格网格线了——线比格子还抢眼。 */
+const MIN_GRID_CELL = 6;
+
+export function codeFont(code: string, cell: number): number {
+  const want = Math.floor(cell * 0.38);
+  const fits = Math.floor((cell - 1) / (CHAR_W * Math.max(1, code.length)));
+  const f = Math.min(want, fits);
+  return f >= MIN_FONT ? f : 0;
 }
 
 /** 字印在这个底色上，用黑还是白。和合成渲染器同一条规则。 */
@@ -201,7 +238,6 @@ export function drawSheet(
   // --- 格子 ---
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const font = Math.max(7, Math.floor(cell * 0.38));
   for (let r = 0; r < rows; r += 1) {
     for (let c = 0; c < cols; c += 1) {
       const it = cells[r * cols + c];
@@ -216,6 +252,8 @@ export function drawSheet(
       // 调淡的格子**不印色号**。每一格都印着字，满屏灰字比颜色本身更抢眼，
       // 想找的那几格反而淹在里面。选中之后只有它们带字，一眼就找得到。
       if (dim) continue;
+      const font = codeFont(it.code, cell);
+      if (!font) continue; // 格子太小，印出来只是一团糊
       ctx.fillStyle = inkOn(it.hex);
       ctx.font = `${font}px system-ui, sans-serif`;
       ctx.fillText(it.code, x + cell / 2, y + cell / 2);
@@ -223,21 +261,27 @@ export function drawSheet(
   }
 
   // --- 网格线 ---
-  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
-  ctx.lineWidth = 1;
-  for (let c = 0; c <= cols; c += 1) {
-    const x = pad + c * cell + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(x, pad);
-    ctx.lineTo(x, pad + gridH);
-    ctx.stroke();
-  }
-  for (let r = 0; r <= rows; r += 1) {
-    const y = pad + r * cell + 0.5;
-    ctx.beginPath();
-    ctx.moveTo(pad, y);
-    ctx.lineTo(pad + gridW, y);
-    ctx.stroke();
+  //
+  // 逐格那一层**格子太小就不画**：手机上 1 倍是三个像素一格，一条 1 像素的线要
+  // 吃掉小半格，满屏细线比豆子本身还显眼（用户原话「图片看着很花」）。每 10 格
+  // 那条粗线照画——它间距够大，是这时候唯一还立得住的定位线。
+  if (cell >= MIN_GRID_CELL) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+    ctx.lineWidth = 1;
+    for (let c = 0; c <= cols; c += 1) {
+      const x = pad + c * cell + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(x, pad);
+      ctx.lineTo(x, pad + gridH);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= rows; r += 1) {
+      const y = pad + r * cell + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(pad, y);
+      ctx.lineTo(pad + gridW, y);
+      ctx.stroke();
+    }
   }
   // 每 10 格加粗一条，照着数的时候不容易串行
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
@@ -264,18 +308,23 @@ export function drawSheet(
   //
   // 上降序、下升序、左降序、右升序 —— 于是**最大的数落在左上和右下**这两个对角。
   // 数格子的时候从哪一边起手都有一个满格基准，不必每次从 1 数到 104。
-  ctx.fillStyle = '#333';
-  ctx.font = `${Math.max(6, Math.floor(cell * 0.36))}px system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  for (let c = 0; c < cols; c += 1) {
-    const x = pad + c * cell;
-    ringCell(ctx, x, pad - ring, cell, ring, String(cols - c)); // 上：降序
-    ringCell(ctx, x, pad + gridH, cell, ring, String(c + 1)); // 下：升序
-  }
-  for (let r = 0; r < rows; r += 1) {
-    const y = pad + r * cell;
-    ringCell(ctx, pad - ring, y, ring, cell, String(rows - r)); // 左：降序
-    ringCell(ctx, pad + gridW, y, ring, cell, String(r + 1)); // 右：升序
+  //
+  // 预览把这一圈关掉了（layout 的 ring: false），改用 drawRingOverlay 贴在取景框
+  // 边上——画在图里的圈一放大就跟着滚出视野，正好在最需要坐标的时候没了。
+  if (ring > 0) {
+    ctx.fillStyle = '#333';
+    ctx.font = `${Math.max(6, Math.floor(cell * 0.36))}px system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    for (let c = 0; c < cols; c += 1) {
+      const x = pad + c * cell;
+      ringCell(ctx, x, pad - ring, cell, ring, String(cols - c)); // 上：降序
+      ringCell(ctx, x, pad + gridH, cell, ring, String(c + 1)); // 下：升序
+    }
+    for (let r = 0; r < rows; r += 1) {
+      const y = pad + r * cell;
+      ringCell(ctx, pad - ring, y, ring, cell, String(rows - r)); // 左：降序
+      ringCell(ctx, pad + gridW, y, ring, cell, String(r + 1)); // 右：升序
+    }
   }
 
   // --- 底部色号汇总 ---
@@ -297,6 +346,90 @@ export function drawSheet(
     ctx.fillText(`${e.count} 颗`, x + 38, y + 26);
     ctx.globalAlpha = 1;
   });
+}
+
+/** 贴边外圈：带的厚度、字号，以及两个数字之间至少留多宽。都是屏幕像素，不随缩放变。 */
+export const RING_PX = 22;
+const RING_FONT = 11;
+const RING_MIN_GAP = 26;
+const RING_BG = '#f4f5f7';
+
+export interface RingView {
+  rows: number;
+  cols: number;
+  /** 当前每格在屏幕上多少像素（= 1 倍格子 × 缩放） */
+  cell: number;
+  /** 取景框已经滚过去多少 */
+  scrollX: number;
+  scrollY: number;
+  /** 取景框（不含外圈那一圈）的可视宽高 */
+  viewW: number;
+  viewH: number;
+  /** 外圈带的厚度 */
+  ring: number;
+}
+
+/**
+ * 把坐标外圈画成**贴着取景框**的一层浮层，而不是图纸的一部分。
+ *
+ * 画在图里的外圈有个致命问题：一放大，图纸的外边就滚出视野了——而放大恰恰是
+ * 「我在数第几行第几列」的时候，坐标反而没了。这一层跟着视野走：不管滚到哪、
+ * 放多大，四边永远贴着当前看得见的那块网格，报的是**这块**的行列号。
+ *
+ * 两条不随缩放变的规矩：
+ *   - 带厚 RING_PX、字号 RING_FONT 都是屏幕像素。放大是为了看清格子，不是为了
+ *     把标尺也撑大。
+ *   - 格子小到印不下每一格时**跳着标**（step），间距始终 ≥ RING_MIN_GAP。手机上
+ *     一格三四个像素，逐格标只会糊成一条灰线。
+ *
+ * 上降序、下升序、左降序、右升序 —— 和导出的那一圈同一套规则，最大的数落在
+ * 左上和右下两个对角。
+ */
+export function drawRingOverlay(ctx: CanvasRenderingContext2D, v: RingView): void {
+  const { rows, cols, cell, scrollX, scrollY, viewW, viewH, ring } = v;
+  ctx.clearRect(0, 0, viewW + ring * 2, viewH + ring * 2);
+  if (!rows || !cols || cell <= 0) return;
+
+  // 当前看得见的那块网格，换算到浮层画布的坐标上。外圈贴着它画，所以图纸没铺满
+  // 取景框时（1 倍、小图纸）外圈就紧贴图纸，不会孤零零挂在框边上。
+  const cl = (n: number, hi: number) => Math.min(hi, Math.max(0, n));
+  const x0 = ring + cl(-scrollX, viewW);
+  const x1 = ring + cl(cols * cell - scrollX, viewW);
+  const y0 = ring + cl(-scrollY, viewH);
+  const y1 = ring + cl(rows * cell - scrollY, viewH);
+  if (x1 <= x0 || y1 <= y0) return; // 网格整个滚出去了，没有坐标可报
+
+  const bw = x1 - x0;
+  const bh = y1 - y0;
+  ctx.fillStyle = RING_BG;
+  ctx.fillRect(x0 - ring, y0 - ring, bw + ring * 2, ring); // 上
+  ctx.fillRect(x0 - ring, y1, bw + ring * 2, ring); // 下
+  ctx.fillRect(x0 - ring, y0 - ring, ring, bh + ring * 2); // 左
+  ctx.fillRect(x1, y0 - ring, ring, bh + ring * 2); // 右
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x0 - ring + 0.5, y0 - ring + 0.5, bw + ring * 2 - 1, bh + ring * 2 - 1);
+  ctx.strokeRect(x0 + 0.5, y0 + 0.5, bw - 1, bh - 1);
+
+  ctx.fillStyle = '#333';
+  ctx.font = `${RING_FONT}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const step = Math.max(1, Math.ceil(RING_MIN_GAP / cell));
+
+  for (let c = 0; c < cols; c += step) {
+    const x = ring + c * cell + cell / 2 - scrollX;
+    if (x < x0 || x > x1) continue;
+    ctx.fillText(String(cols - c), x, y0 - ring / 2); // 上：降序
+    ctx.fillText(String(c + 1), x, y1 + ring / 2); // 下：升序
+  }
+  for (let r = 0; r < rows; r += step) {
+    const y = ring + r * cell + cell / 2 - scrollY;
+    if (y < y0 || y > y1) continue;
+    ctx.fillText(String(rows - r), x0 - ring / 2, y); // 左：降序
+    ctx.fillText(String(r + 1), x1 + ring / 2, y); // 右：升序
+  }
 }
 
 /**

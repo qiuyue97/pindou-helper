@@ -449,6 +449,28 @@ it('反向拖也是同一段', () => {
   expect(screen.getByText(/已选 5 个/)).toBeInTheDocument();
 });
 
+it('触摸起手先放掉隐式捕获，不然手指划过的格子一个都认不出来', () => {
+  // 规范规定：touch 的 pointerdown 之后浏览器把指针**隐式捕获**在起手那个元素上，
+  // 后面每一个 pointermove 的 target 都还是它。手机上「按住有框、往下拉不出第二个
+  // 框」就是这么来的（鼠标没有隐式捕获，所以电脑上一直是好的）。
+  const { container } = setup();
+  const a = container.querySelector('[data-flat="0"]') as HTMLElement;
+  vi.spyOn(a, 'hasPointerCapture').mockReturnValue(true);
+  const release = vi.spyOn(a, 'releasePointerCapture');
+  fireEvent.pointerDown(a, { pointerId: 7, pointerType: 'touch' });
+  expect(release).toHaveBeenCalledWith(7);
+});
+
+it('手指滑出格子区再抬起，拖选照样收尾——容器已经收不到 pointerup 了', () => {
+  const { container } = setup();
+  const a = container.querySelector('[data-flat="0"]')!;
+  const b = container.querySelector('[data-flat="8"]')!;
+  fireEvent.pointerDown(a);
+  fireEvent.pointerMove(b);
+  fireEvent.pointerUp(document.body); // 在格子区外面抬起
+  expect(screen.getByText(/已选 5 个/)).toBeInTheDocument();
+});
+
 it('起手在已选的格子上，拖动是整段取消', () => {
   const { container } = setup();
   // 先勾上 flat 0 和 1

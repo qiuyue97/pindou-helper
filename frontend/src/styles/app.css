@@ -655,17 +655,32 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .preview-zoom span {
   font-variant-numeric: tabular-nums;
 }
-/* 取景框：尺寸恒定（高由组件设成 1 倍时的图纸高），1 倍 hidden 不出条，
-   放大后 auto 可滚动 + 拖动平移。overflow / cursor / height 都在组件里按 zoom 设。 */
 /* 宽度由 .sheet-page 定，这里铺满即可。 */
 .preview-wrap {
   width: 100%;
 }
+/* 外框 = 取景框 + 四周一圈坐标带。尺寸恒定（组件按 1 倍算好设进来），
+   所以缩放时下方元素不会被顶动。居中，两边留等宽白边。 */
+.preview-frame {
+  position: relative;
+  margin: 0 auto;
+  max-width: 100%;
+}
+/* 取景框嵌在坐标带里面（inset 由组件设成带厚）。1 倍 hidden 不出条，放大后
+   auto 可滚动 + 拖动平移；overflow / touch-action / cursor 都在组件里按 zoom 设。
+   边框交给坐标带那一层画，这里不重复描一圈。 */
 .preview-scroll {
-  border: 1px solid rgba(0, 0, 0, 0.15);
-  border-radius: 4px;
+  position: absolute;
   background: #fff;
   overscroll-behavior: contain;
+}
+/* 坐标带：贴着取景框的一层浮层，不跟着图缩放也不跟着图滚走。纯展示，
+   指针事件要穿过去落到取景框上，否则拖不动也缩不了。 */
+.preview-ring {
+  position: absolute;
+  inset: 0;
+  display: block;
+  pointer-events: none;
 }
 
 /* 按色号突出显示：选中的照常画，其余的调低透明度。 */

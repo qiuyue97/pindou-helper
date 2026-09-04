@@ -159,16 +159,77 @@ it('复位回到 1 倍', () => {
   expect(screen.getByText('滚轮或双指缩放')).toBeInTheDocument();
 });
 
-it('取景框宽高恒定：1 倍 hidden 不出条，放大后 auto 可滚动，但盒子尺寸不变', () => {
+it('外框宽高恒定：1 倍 hidden 不出条，放大后 auto 可滚动，但框尺寸不变', () => {
   const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const frame = container.querySelector('.preview-frame') as HTMLElement;
   const scroll = container.querySelector('.preview-scroll') as HTMLElement;
-  const w0 = scroll.style.width;
-  const h0 = scroll.style.height;
+  const w0 = frame.style.width;
+  const h0 = frame.style.height;
   expect(scroll.style.overflow).toBe('hidden');
 
   fireEvent.wheel(scroll, { deltaY: -240 });
   expect(scroll.style.overflow).toBe('auto');
-  // 关键：放大后取景框还是那么大，下方元素不会被顶动
-  expect(scroll.style.width).toBe(w0);
-  expect(scroll.style.height).toBe(h0);
+  // 关键：放大后外框还是那么大，下方元素不会被顶动
+  expect(frame.style.width).toBe(w0);
+  expect(frame.style.height).toBe(h0);
+});
+
+// ---------- 贴边坐标圈 ----------
+
+it('坐标圈是单独一层，尺寸不跟着缩放走——放大后它还贴在框边上', () => {
+  const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const ring = screen.getByLabelText('行列坐标') as HTMLCanvasElement;
+  const sheetCanvas = screen.getByLabelText('完整图纸') as HTMLCanvasElement;
+  const w0 = ring.width;
+
+  fireEvent.wheel(container.querySelector('.preview-scroll')!, { deltaY: -240 });
+  expect(sheetCanvas.width).toBeGreaterThan(w0); // 图放大了
+  expect(ring.width).toBe(w0); // 坐标圈没有
+});
+
+it('坐标圈不吃指针事件，否则框里既拖不动也缩不了', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  const ring = screen.getByLabelText('行列坐标');
+  expect(ring).toHaveClass('preview-ring'); // pointer-events: none 在这个类上
+});
+
+it('1 倍时 touch-action 也不是 auto：双指得归我们，不能去缩整个页面', () => {
+  const { container } = render(<SheetPreview sheet={makeSheet()} />);
+  const scroll = container.querySelector('.preview-scroll') as HTMLElement;
+  expect(scroll.style.touchAction).toBe('pan-y'); // 单指还能滑页面，双指不行
+  fireEvent.wheel(scroll, { deltaY: -240 });
+  expect(scroll.style.touchAction).toBe('none');
+});
+
+// ---------- 手机宽度 ----------
+
+/** 一张一百来列的大图纸，104×104 全是同一个色号。 */
+function bigSheet(): Sheet {
+  const n = 104;
+  return makeSheet({
+    rows: n,
+    cols: n,
+    labels: Array(n * n).fill(0),
+    classes: [{ klass: 0, code: 'H15' }],
+    tally: { H15: n * n },
+  } as unknown as Partial<Sheet>);
+}
+
+it('手机宽度下 1 倍就一屏看全，不会被取景框裁掉右边一大截', () => {
+  // 一百来列摊在 366 像素里只能是三个像素一格；卡在导出用的 minCell 8 上，
+  // 整张图要 848 像素宽，右边一大半直接被 overflow:hidden 切掉。
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(366);
+  const { container } = render(<SheetPreview sheet={bigSheet()} />);
+  const frame = container.querySelector('.preview-frame') as HTMLElement;
+  expect(Number.parseFloat(frame.style.width)).toBeLessThanOrEqual(366);
+});
+
+it('格子只有几个像素时不硬印色号——那层糊字比没有还糟', () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(366);
+  render(<SheetPreview sheet={bigSheet()} />);
+  // 挂载期间画过两遍（先按默认宽，再按量到的手机宽），清掉重画一次再断言
+  ctx.fillText.mock.calls.length = 0;
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  // 三个像素一格：一万多个格子一个都不印，只剩底部汇总里那一条
+  expect(texts().filter((t) => t === 'H15')).toHaveLength(1);
 });

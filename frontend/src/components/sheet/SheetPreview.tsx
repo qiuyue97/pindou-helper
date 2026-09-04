@@ -1,12 +1,18 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Sheet } from '../../api/types';
-import { drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
+import { RING_PX, drawRingOverlay, drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
 import { byCode } from '../../lib/sheetSort';
 import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
 
-const ZOOM_MIN = 1;
-const ZOOM_MAX = 6;
-const clamp = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
+/**
+ * 放大的上限由**画布像素**定，不是拍脑袋的常数。
+ *
+ * 放大是重画：格子涨一倍，画布面积涨四倍。104×104 的图纸放到 64 像素一格就是
+ * 四千多万像素、一百多兆显存，手机上直接开不出来。反过来，手机上 1 倍的格子只有
+ * 三四个像素，卡死在固定的 6 倍又根本不够看。所以上限按图纸大小算出来。
+ */
+const MAX_CANVAS_PX = 24e6;
+const MAX_CELL = 64;
 
 /**
  * 图纸预览：和「下载图纸」用**同一个渲染器**画出来的同一张图。
@@ -18,18 +24,21 @@ const clamp = (n: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n));
  * 按钮，放大后**按住拖动平移**。这里是**重画**不是 CSS 变换——按更大的格子重跑
  * layout，canvas 的像素数跟着涨，所以怎么放都清晰。
  *
- * 尺寸策略（两条都是踩坑踩出来的）：
+ * 三条尺寸策略，都是踩坑踩出来的：
  *   - **取景框尺寸恒定** = 1 倍时的图纸宽高，任何缩放级别都不变。1 倍时 canvas
  *     刚好填满、overflow hidden；放大后 canvas 溢出、overflow auto，滚动/拖动
- *     平移。框不变 -> 下方元素不动 -> **滚轮缩放不跳**。之前跳就是因为放大后
- *     把框钉成 80vh，和 1 倍的高不一样，下面的东西被顶上来。
- *   - 只按宽度收，高度随它——图纸长一点无所谓。取景框在 .preview-wrap 里
- *     **居中**（margin auto），两边留等宽白边，不再左贴边右留白。
+ *     平移。框不变 -> 下方元素不动 -> **滚轮缩放不跳**。
+ *   - 只按宽度收，高度随它——图纸长一点无所谓。外框在 .preview-wrap 里**居中**，
+ *     两边留等宽白边。
+ *   - 1 倍必须**一屏看全**，所以 minCell 放到 2：手机上一百来列摊在 320 像素里
+ *     只能是三四个像素一格，卡在导出用的 8 上就会被取景框裁掉右边一大截。
  *
- * 每次改动（改整类、改豆点、改图纸数量）都会重画：`sheet` 一变，useMemo 重算。
+ * 坐标外圈不画在图里，而是 drawRingOverlay 贴在取景框四边（.preview-ring）：
+ * 画在图里的那圈一放大就滚出视野，偏偏放大就是在数第几行第几列的时候。
  */
 export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const ringRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { byCode: catalogue } = useEffectiveCatalog();
@@ -64,21 +73,31 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     return () => ro.disconnect();
   }, []);
 
-  // 1 倍：只按宽度收，高度随它。
+  // 1 倍：只按宽度收，高度随它。四周还要让出一圈坐标带的位置。
   const base = useMemo(
-    () => layout(sheet.rows, sheet.cols, legendLen, { maxWidth: availW }),
+    () =>
+      previewLayout(sheet.rows, sheet.cols, legendLen, {
+        maxWidth: Math.max(120, availW - RING_PX * 2),
+      }),
     [sheet.rows, sheet.cols, legendLen, availW],
   );
   const lay = useMemo(
     () =>
       zoom === 1
         ? base
-        : layout(sheet.rows, sheet.cols, legendLen, {
+        : previewLayout(sheet.rows, sheet.cols, legendLen, {
             cell: base.cell * zoom,
-            maxWidth: 8000,
+            maxWidth: 1e6,
           }),
     [base, zoom, sheet.rows, sheet.cols, legendLen],
   );
+  const zoomMax = useMemo(() => {
+    const cap = Math.min(
+      MAX_CELL,
+      Math.sqrt(MAX_CANVAS_PX / Math.max(1, sheet.rows * sheet.cols)),
+    );
+    return Math.max(2, Math.min(16, cap / Math.max(1, base.cell)));
+  }, [sheet.rows, sheet.cols, base.cell]);
 
   useEffect(() => {
     const ctx = ref.current?.getContext('2d');
@@ -93,6 +112,23 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
     });
   }, [sheet.rows, sheet.cols, drawing, lay, focus]);
 
+  /** 贴边坐标圈。它跟着**视野**走，所以滚一下、缩一下都得重画。 */
+  const paintRing = useCallback(() => {
+    const ctx = ringRef.current?.getContext('2d');
+    const box = scrollRef.current;
+    if (!ctx || !box || !sheet.rows || !sheet.cols) return;
+    drawRingOverlay(ctx, {
+      rows: sheet.rows,
+      cols: sheet.cols,
+      cell: lay.cell,
+      scrollX: box.scrollLeft,
+      scrollY: box.scrollTop,
+      viewW: base.width,
+      viewH: base.height,
+      ring: RING_PX,
+    });
+  }, [sheet.rows, sheet.cols, lay.cell, base.width, base.height]);
+
   // 取景框尺寸不随 zoom 变，所以不用再补偿页面滚动——只把取景框内部滚到锚点。
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -102,13 +138,14 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
       el.scrollLeft = a.cx - a.px;
       el.scrollTop = a.cy - a.py;
     }
-  }, [zoom]);
+    paintRing();
+  }, [paintRing]);
 
   function zoomAround(factor: number, px: number, py: number) {
     const el = scrollRef.current;
     if (!el) return;
     setZoom((z) => {
-      const nz = clamp(z * factor);
+      const nz = Math.min(zoomMax, Math.max(1, z * factor));
       if (nz === z) return z;
       const ratio = nz / z;
       pendingAnchor.current = {
@@ -123,6 +160,10 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
 
   // 滚轮缩放。React 的 onWheel 是被动监听，preventDefault 无效（页面会跟着滚），
   // 自己挂一个非被动的。
+  //
+  // 触摸端还要多挡两道：`touch-action: pan-y` 只在标准实现里拦得住双指缩放，
+  // iOS Safari 照样会去缩**整个页面**（用户原话「优先放大整个页面」）。所以多指的
+  // touchstart/touchmove 直接 preventDefault，再把 Safari 私有的 gesture 事件挡掉。
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -131,9 +172,23 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
       const rect = el.getBoundingClientRect();
       zoomAround(Math.exp(-e.deltaY / 400), e.clientX - rect.left, e.clientY - rect.top);
     };
+    const onMultiTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    const onGesture = (e: Event) => e.preventDefault();
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
+    el.addEventListener('touchstart', onMultiTouch, { passive: false });
+    el.addEventListener('touchmove', onMultiTouch, { passive: false });
+    el.addEventListener('gesturestart', onGesture);
+    el.addEventListener('gesturechange', onGesture);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('touchstart', onMultiTouch);
+      el.removeEventListener('touchmove', onMultiTouch);
+      el.removeEventListener('gesturestart', onGesture);
+      el.removeEventListener('gesturechange', onGesture);
+    };
+  });
 
   // 一根指头/按住左键（放大后）拖着平移，两根指头捏合缩放。
   const pts = useRef(new Map<number, [number, number]>());
@@ -189,31 +244,43 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
         )}
       </div>
 
-      {/* 取景框恒为 1 倍图纸的宽高，居中。1 倍时 canvas 刚好填满；放大后溢出，
-          滚动/拖动平移。框尺寸不变 -> 下方元素不动 -> 缩放不跳。 */}
+      {/* 外框恒为 1 倍图纸的宽高 + 四周一圈坐标带，居中。取景框嵌在这一圈里面：
+          1 倍时 canvas 刚好填满；放大后溢出，滚动/拖动平移。外框尺寸不变 ->
+          下方元素不动 -> 缩放不跳。 */}
       <div
-        ref={scrollRef}
-        className="preview-scroll"
-        style={{
-          width: base.width,
-          height: base.height,
-          maxWidth: '100%',
-          margin: '0 auto',
-          overflow: zoom === 1 ? 'hidden' : 'auto',
-          touchAction: zoom === 1 ? 'auto' : 'none',
-          cursor: zoom === 1 ? 'default' : 'grab',
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
+        className="preview-frame"
+        style={{ width: base.width + RING_PX * 2, height: base.height + RING_PX * 2 }}
       >
+        <div
+          ref={scrollRef}
+          className="preview-scroll"
+          style={{
+            inset: RING_PX,
+            overflow: zoom === 1 ? 'hidden' : 'auto',
+            touchAction: zoom === 1 ? 'pan-y' : 'none',
+            cursor: zoom === 1 ? 'default' : 'grab',
+          }}
+          onScroll={paintRing}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+        >
+          <canvas
+            ref={ref}
+            aria-label="完整图纸"
+            width={lay.width}
+            height={lay.height}
+            style={{ display: 'block' }}
+          />
+        </div>
+        {/* 坐标外圈：贴着取景框，既不跟着图缩放，也不跟着图滚走 */}
         <canvas
-          ref={ref}
-          aria-label="完整图纸"
-          width={lay.width}
-          height={lay.height}
-          style={{ display: 'block' }}
+          ref={ringRef}
+          className="preview-ring"
+          aria-label="行列坐标"
+          width={base.width + RING_PX * 2}
+          height={base.height + RING_PX * 2}
         />
       </div>
 
@@ -249,4 +316,23 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
       </div>
     </div>
   );
+}
+
+/**
+ * 预览用的版式。和导出差两处：
+ *
+ *   ring: false   外圈是贴边浮层，不画进图里
+ *   minCell: 2    1 倍必须一屏看全，不能像导出那样卡在 8
+ *
+ * 再把底部汇总往下推一条外圈的厚度：贴边浮层的下沿落在网格正下方，没这条空当
+ * 就会压住汇总的第一行色块。
+ */
+function previewLayout(
+  rows: number,
+  cols: number,
+  legendLen: number,
+  opts: { cell?: number; maxWidth: number },
+) {
+  const l = layout(rows, cols, legendLen, { ...opts, ring: false, minCell: 2 });
+  return { ...l, legendTop: l.legendTop + RING_PX, height: l.height + RING_PX };
 }

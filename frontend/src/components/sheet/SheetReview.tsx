@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CountRow, Sheet } from '../../api/types';
 import { type Rect, cellRect } from '../../lib/sheetGeometry';
 import { BLANK_CODE, groupByCode } from '../../lib/sheetSort';
@@ -263,6 +263,13 @@ function CellPane({
   const moved = useRef(false);
   const suppressClick = useRef(false);
   const [dragSet, setDragSet] = useState<Set<number> | null>(null);
+  /** 拖选区另存一份在 ref 里：手指滑出格子区再抬起时，收尾的是挂在 window 上的
+   *  兜底监听，它读不到 state 的最新值。 */
+  const dragRef = useRef<Set<number> | null>(null);
+  function putDrag(s: Set<number> | null) {
+    dragRef.current = s;
+    setDragSet(s);
+  }
 
   /** 事件当前压在哪一格上。不捕获指针，所以 pointermove 的 target 就是指针下的
    *  那个格子（拖过谁就是谁），不用 elementFromPoint。 */
@@ -334,6 +341,13 @@ function CellPane({
   function onPointerDown(e: React.PointerEvent) {
     const flat = flatOf(e);
     if (flat === null) return;
+    // 触摸的指针会被浏览器**隐式捕获**到 pointerdown 那个元素上（Pointer Events
+    // 规范就是这么定的），于是之后每一个 pointermove 的 target 都还是起手那一格
+    // ——手指明明划过了十几格，代码一格都认不出来。这就是手机上「按住有框、
+    // 往下拉不出第二个框」的全部原因（鼠标没有隐式捕获，所以电脑上一直是好的）。
+    // 放掉捕获，move 才会正常落到指针底下那一格上。
+    const el = e.target as Element;
+    if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
     anchor.current = flat;
     mode.current = picked.has(flat) ? 'remove' : 'add';
     moved.current = false;
@@ -348,14 +362,15 @@ function CellPane({
     if (ai < 0 || bi < 0) return;
     if (bi !== ai) moved.current = true;
     const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
-    setDragSet(new Set(pageCells.slice(lo, hi + 1)));
+    putDrag(new Set(pageCells.slice(lo, hi + 1)));
   }
 
-  function onPointerUp() {
-    if (moved.current && dragSet) {
+  const endDrag = useCallback(() => {
+    const drag = dragRef.current;
+    if (moved.current && drag) {
       setPicked((s) => {
         const next = new Set(s);
-        for (const flat of dragSet) {
+        for (const flat of drag) {
           if (mode.current === 'add') next.add(flat);
           else next.delete(flat);
         }
@@ -365,8 +380,23 @@ function CellPane({
     }
     anchor.current = null;
     moved.current = false;
-    setDragSet(null);
-  }
+    putDrag(null);
+  }, []);
+
+  // 放掉隐式捕获之后，手指要是滑出格子区再抬起，容器就收不到 pointerup 了，
+  // 拖选会一直卡在半路（选区悬着、下一次按下接着上一次的锚点）。挂 window 上兜底。
+  // 容器自己的 pointerup 先跑，跑完 anchor 已经清空，这里就不会重复收一次。
+  useEffect(() => {
+    const up = () => {
+      if (anchor.current !== null) endDrag();
+    };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    return () => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+    };
+  }, [endDrag]);
 
   // 拖动预览：起手是「选」就把这一段并上去，是「取消」就把这一段挖掉。
   let sel = picked;
@@ -414,8 +444,8 @@ function CellPane({
           }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerUp}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
           onClickCapture={(e) => {
             if (suppressClick.current) {
               e.stopPropagation();

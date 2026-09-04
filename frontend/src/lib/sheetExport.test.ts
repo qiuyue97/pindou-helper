@@ -8,7 +8,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   type ExportCell,
   type LegendEntry,
+  type RingView,
+  codeFont,
   dimHex,
+  drawRingOverlay,
   drawSheet,
   inkOn,
   layout,
@@ -27,6 +30,7 @@ function ctxStub() {
   const ctx = {
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
+    clearRect: vi.fn(),
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
@@ -88,11 +92,44 @@ describe('layout', () => {
     expect(l.cell).toBeGreaterThanOrEqual(8);
   });
 
+  it('关掉外圈就一点都不留：预览的外圈是贴边浮层，不占图里的地方', () => {
+    const l = layout(10, 10, 3, { cell: 32, ring: false });
+    expect(l.ring).toBe(0);
+    expect(l.pad).toBe(0);
+    expect(l.width).toBe(10 * 32);
+  });
+
+  it('minCell 放开后能缩到 8 以下——预览必须一屏看全，导出不必', () => {
+    // 手机：一百来列摊在 320 像素里，卡在 8 上整张图会被取景框裁掉右边一大截
+    const shown = layout(104, 104, 20, { maxWidth: 320, ring: false, minCell: 2 });
+    expect(shown.width).toBeLessThanOrEqual(320);
+    expect(shown.cell).toBeLessThan(8);
+    // 导出还是老样子
+    expect(layout(104, 104, 20, { maxWidth: 320 }).cell).toBe(8);
+  });
+
   it('底部汇总按图宽换行，高度跟着长', () => {
     const narrow = layout(10, 10, 40, { cell: 32 });
     const wide = layout(10, 60, 40, { cell: 32 });
     expect(narrow.legendRows).toBeGreaterThan(wide.legendRows);
     expect(narrow.height).toBeGreaterThan(narrow.legendTop);
+  });
+});
+
+describe('codeFont', () => {
+  it('格子够大就按格子取字号', () => {
+    expect(codeFont('H15', 32)).toBe(12);
+  });
+
+  it('塞不下先缩字号，而不是让字捅出格子', () => {
+    // 长色号在同样大的格子里要小一号
+    expect(codeFont('ABCDE', 32)).toBeLessThan(codeFont('H15', 32));
+    expect(codeFont('ABCDE', 32)).toBeGreaterThan(0);
+  });
+
+  it('缩到看不清就干脆不印——手机上一格三四个像素，硬印是一团糊', () => {
+    expect(codeFont('H15', 4)).toBe(0);
+    expect(codeFont('H15', 12)).toBe(0);
   });
 });
 
@@ -179,6 +216,16 @@ describe('drawSheet', () => {
     expect(grid).toHaveLength(4 + 1 + 3 + 1 + 1 + 1);
   });
 
+  it('格子小到逐格网格线比豆子还显眼时，只留每 10 格那条粗线', () => {
+    const ctx = ctxStub();
+    const lay = layout(20, 20, 0, { cell: 3, ring: false });
+    drawSheet(ctx, { rows: 20, cols: 20, cells: cells(Array(400).fill('H15')), legend: [], layout: lay });
+    const grid = ctx.strokes.filter((c) => !c.startsWith('rgba(0,0,0,0.0'));
+    // 逐格线（0.28）一条不画，只剩每 10 格的粗线（0.55）：横竖各 3 条
+    expect(grid.filter((c) => c === 'rgba(0,0,0,0.28)')).toHaveLength(0);
+    expect(grid.filter((c) => c === 'rgba(0,0,0,0.55)')).toHaveLength(6);
+  });
+
   it('先铺背景斜纹，格子画在它上面', () => {
     // 白底上空格、调淡的格子、本来就接近白的豆子长得一模一样。斜纹给背景一点
     // 质感，被选中的色号于是成了画面上唯一平整实心的东西。
@@ -217,6 +264,23 @@ describe('drawSheet', () => {
     const ticks = ctx.texts.map((t) => Number(t.text)).filter((n) => !Number.isNaN(n));
     // 上下各 100 + 左右各 1 = 202，一个不多一个不少
     expect(ticks.length).toBe(202);
+  });
+
+  it('关掉外圈就一个坐标都不画（预览用贴边浮层顶上）', () => {
+    const ctx = ctxStub();
+    const lay = layout(6, 8, 0, { cell: 32, ring: false });
+    drawSheet(ctx, { rows: 6, cols: 8, cells: cells(Array(48).fill('H15')), legend: [], layout: lay });
+    const ticks = ctx.texts.map((t) => Number(t.text)).filter((n) => !Number.isNaN(n));
+    expect(ticks).toHaveLength(0);
+  });
+
+  it('格子小到印不下色号就不印——手机上那一层糊字比没有还糟', () => {
+    const ctx = ctxStub();
+    const lay = layout(2, 2, 0, { cell: 6, ring: false });
+    drawSheet(ctx, { rows: 2, cols: 2, cells: cells(Array(4).fill('H15')), legend: [], layout: lay });
+    expect(ctx.texts.some((t) => t.text === 'H15')).toBe(false);
+    // 颜色照画——缩略图靠的就是这片颜色
+    expect(ctx.fills).toContain('#00FF00');
   });
 
   it('底部汇总每项有色块、色号和数量', () => {
@@ -295,5 +359,80 @@ describe('drawSheet', () => {
     });
     expect(ctx.texts.some((t) => t.text === 'A1')).toBe(true);
     expect(ctx.texts.some((t) => t.text === 'B1')).toBe(false);
+  });
+});
+
+/**
+ * 贴边坐标圈。
+ *
+ * 它存在的理由就一条：图里画的那圈一放大就滚出视野，而放大恰恰是「我在数第几行
+ * 第几列」的时候。所以这里盯的全是「跟着视野走」——滚过去以后报的是**当前这块**
+ * 的行列号，不是图纸开头那几列。
+ */
+describe('drawRingOverlay', () => {
+  function ring(over: Partial<RingView> = {}) {
+    const ctx = ctxStub();
+    const v: RingView = {
+      rows: 20, cols: 30, cell: 20,
+      scrollX: 0, scrollY: 0,
+      viewW: 600, viewH: 400, ring: 22,
+      ...over,
+    };
+    drawRingOverlay(ctx, v);
+    return { ctx, v };
+  }
+  const nums = (ctx: ReturnType<typeof ctxStub>) =>
+    ctx.texts.map((t) => Number(t.text)).filter((n) => !Number.isNaN(n));
+
+  it('上降序、下升序、左降序、右升序——最大的数落在左上和右下', () => {
+    const { ctx } = ring();
+    // 上边最左那格是 cols，下边最右那格是 cols
+    const top = ctx.texts.filter((t) => t.y < 22);
+    const bottom = ctx.texts.filter((t) => t.y > 422);
+    expect(Math.max(...top.map((t) => Number(t.text)))).toBe(30);
+    expect(top.reduce((a, b) => (a.x < b.x ? a : b)).text).toBe('30');
+    expect(bottom.reduce((a, b) => (a.x < b.x ? a : b)).text).toBe('1');
+    // 左边最上那格是 rows，右边最上那格是 1
+    const left = ctx.texts.filter((t) => t.x < 22);
+    const right = ctx.texts.filter((t) => t.x > 622);
+    expect(left.reduce((a, b) => (a.y < b.y ? a : b)).text).toBe('20');
+    expect(right.reduce((a, b) => (a.y < b.y ? a : b)).text).toBe('1');
+  });
+
+  it('滚过去以后报的是**当前视野**里的列号，不是图纸开头那几列', () => {
+    // 2 倍（cell 40），横向滚掉 400 -> 视野落在第 10..24 列
+    const { ctx } = ring({ cell: 40, scrollX: 400 });
+    const top = ctx.texts.filter((t) => t.y < 22).map((t) => Number(t.text));
+    expect(top).not.toContain(30); // 第 0 列已经滚出去了
+    expect(top).toContain(20); // 第 10 列（降序 30-10）就在左边
+  });
+
+  it('格子小到挤不下就跳着标，不糊成一条灰线', () => {
+    const { ctx } = ring({ cols: 100, cell: 3, viewW: 300 });
+    const top = ctx.texts.filter((t) => t.y < 22);
+    expect(top.length).toBeGreaterThan(0);
+    expect(top.length).toBeLessThan(100 / 4); // 逐格标是 100 个
+    const xs = top.map((t) => t.x).sort((a, b) => a - b);
+    for (let i = 1; i < xs.length; i += 1) expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(20);
+  });
+
+  it('字号和带厚不随缩放变——放大是为了看清格子，不是把标尺也撑大', () => {
+    const a = ring({ cell: 20 }).ctx.font;
+    const b = ring({ cell: 80 }).ctx.font;
+    expect(a).toBe(b);
+  });
+
+  it('外圈贴着**看得见的那块网格**，图纸没铺满取景框时不会孤零零挂在框边上', () => {
+    // 网格只有 200 宽，取景框 600：右边那条带应该贴在 22+200 处，不是 22+600
+    const { ctx } = ring({ cols: 10, rows: 5, cell: 20 });
+    const right = ctx.texts.filter((t) => t.x > 22 + 200);
+    expect(right.length).toBeGreaterThan(0);
+    expect(Math.min(...right.map((t) => t.x))).toBeLessThan(22 + 300);
+  });
+
+  it('网格整个滚出视野就什么都不画', () => {
+    const { ctx } = ring({ scrollY: 99999 });
+    expect(ctx.texts).toHaveLength(0);
+    expect(ctx.fillRect).not.toHaveBeenCalled();
   });
 });
