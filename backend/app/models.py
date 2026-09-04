@@ -161,6 +161,13 @@ class Sheet(Base):
     #: {"H15": 37} AI 抽取的图例，用户可改。它是关于这张图的一个说法，不是权威。
     prior: Mapped[dict] = mapped_column(JSON, default=dict)
 
+    #: 识别到哪一步了，给用户看的一句话（「正在读色号 2/5 页」）。
+    #: 只在 running 期间有意义，纯展示，不参与任何计算。
+    step: Mapped[str] = mapped_column(String(64), default="")
+    #: 0-100。同样只是展示——真实耗时全压在 OCR 那一段，所以这是**分段权重**，
+    #: 不是线性时间。宁可让它在 OCR 那一档慢慢爬，也别让它冲到 99 再卡住。
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+
     #: "mineru/vlm" | "colour-only"
     engine: Mapped[str] = mapped_column(String(32), default="")
     #: 这张图的填充色到底是不是分立的几十个类。false 时整张走颜色兜底。

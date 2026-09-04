@@ -69,6 +69,8 @@ function sheet(over: Partial<Sheet> = {}): Sheet {
     engine: 'mineru/vlm',
     structured: true,
     error: '',
+    step: '',
+    progress: 100,
     seen: false,
     tally: { H15: 4 },
     created_at: '2026-09-02T00:00:00Z',
@@ -110,7 +112,7 @@ it('普通账号看得见入口，点了给升级提示', () => {
 it('一开始只有上传', () => {
   mockFetch({});
   show();
-  expect(screen.getByLabelText('选择图纸')).toBeInTheDocument();
+  expect(screen.getByLabelText('上传图纸')).toBeInTheDocument();
   expect(screen.queryByLabelText('网格范围')).toBeNull();
 });
 
@@ -203,7 +205,7 @@ it('识别中的图纸放在 URL 里，不放在组件 state 里', async () => {
   expect(await screen.findByText(/正在识别/)).toBeInTheDocument();
 });
 
-it('上传界面列出最近的图纸，点一下回到它', async () => {
+it('上传界面列出我的图纸，点一下回到它', async () => {
   mockFetch({
     'GET /api/sheets': {
       body: {
@@ -213,7 +215,7 @@ it('上传界面列出最近的图纸，点一下回到它', async () => {
     },
   });
   show();
-  expect(await screen.findByText('最近的图纸')).toBeInTheDocument();
+  expect(await screen.findByText('我的图纸')).toBeInTheDocument();
   // 现在是缩略图墙：打开按钮包着缩略图，名字/尺寸/状态在下面
   expect(screen.getByRole('button', { name: '打开 #7' })).toBeInTheDocument();
   expect(screen.getByText('49×48')).toBeInTheDocument();
@@ -223,8 +225,8 @@ it('上传界面列出最近的图纸，点一下回到它', async () => {
 it('没有历史图纸时不显示那一块', async () => {
   mockFetch({ 'GET /api/sheets': { body: { sheets: [], running: 0 } } });
   show();
-  await screen.findByLabelText('选择图纸');
-  expect(screen.queryByText('最近的图纸')).toBeNull();
+  await screen.findByLabelText('上传图纸');
+  expect(screen.queryByText('我的图纸')).toBeNull();
 });
 
 it('完成后可以直接去识别另一张', async () => {

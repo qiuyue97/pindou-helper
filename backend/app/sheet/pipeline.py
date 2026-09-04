@@ -16,6 +16,7 @@ MinerU 请求**，花第二份配额和钱，还要重新采样、重新聚类�
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 
 import cv2
@@ -84,23 +85,56 @@ def detect(image: bytes) -> Guess | None:
     return _detect_lattice(decode_image(image))
 
 
-def _read_classes(pics, valid, token, timeout):
+def _read_classes(pics, valid, token, timeout, on_page=None):
     """留一个接缝，方便测试替换整段 OCR。"""
-    return mineru.read_classes(pics, valid, token=token, timeout=timeout)
+    return mineru.read_classes(pics, valid, token=token, timeout=timeout,
+                               on_page=on_page)
+
+
+#: 各步骤走完时的进度百分比。
+#:
+#: 这是**分段权重**，不是线性时间：真实耗时几乎全压在 OCR 那一段（一次 MinerU
+#: 往返几十秒到几分钟），前面几步加起来通常不到一秒。所以前面几步一带而过，把
+#: 45→85 这整段留给 OCR 按页慢慢爬。宁可爬得慢，也别让进度条冲到 99 再卡住不动
+#: ——那比没有进度条更让人以为卡死了。
+STEPS = {
+    "decode": ("读取图片", 5),
+    "sample": ("逐格取样", 15),
+    "cluster": ("归拢颜色", 35),
+    "ocr": ("识别色号", 45),
+    "ocr_done": ("色号读完", 85),
+    "skip_ocr": ("按颜色定色号", 85),
+}
+#: OCR 那一段占的区间，按页数往前推。
+OCR_SPAN = (45, 85)
 
 
 def analyse(image: bytes, geom: Geometry, *, token: str = "",
-            timeout: float = 600.0) -> Analysis:
-    """贵的那一半：采样、聚类、OCR。一张图只该跑一次。"""
+            timeout: float = 600.0,
+            on_step: "Callable[[str, int], None] | None" = None) -> Analysis:
+    """贵的那一半：采样、聚类、OCR。一张图只该跑一次。
+
+    `on_step(文案, 百分比)` 是可选的进度回调。识别是后台线程跑的，用户那边只能看
+    见一个状态字段——没有它，整个过程就是一句「可能要一两分钟」，用户不知道是在
+    排队、在算、还是已经卡死了。
+    """
+    def say(key: str) -> None:
+        if on_step:
+            text, pct = STEPS[key]
+            on_step(text, pct)
+
+    say("decode")
     im = decode_image(image)
     rows, cols = geom.rows, geom.cols
     if rows < 1 or cols < 1:
         raise ValueError("行列数必须为正")
 
+    say("sample")
     fill, inked = sample_cells(im, geom.rect, rows, cols)
     # 白豆和空格在像素上分不开，所以「这张图有空格子吗」只能由用户回答。
     # 他说没有，就把每一格都当作有豆子。
     live = inked if geom.has_blanks else np.ones_like(inked)
+    say("cluster")
     labels, n = colour_classes(fill, live)
     palette = load_palette(geom.palette)
 
@@ -110,10 +144,18 @@ def analyse(image: bytes, geom: Geometry, *, token: str = "",
     reads: list[str | None] = [None] * n
     engine = "colour-only"
     if structured and token and n:
+        say("ocr")
         # 墨迹图只在这里才需要——放在结构判定之后，没有结构的图完全不必付这份代价
         ink = build_glyphs(im, fill, geom.rect, rows, cols)
         pics = [class_picture(ink, st.order) for st in stats]
-        got, info = _read_classes(pics, set(palette.codes), token, timeout)
+
+        def on_page(done: int, total: int) -> None:
+            if not on_step or total <= 0:
+                return
+            lo, hi = OCR_SPAN
+            on_step(f"识别色号 {done}/{total} 页", lo + round((hi - lo) * done / total))
+
+        got, info = _read_classes(pics, set(palette.codes), token, timeout, on_page)
         if got is not None:
             reads = got
             engine = f"mineru/{info.get('model', 'vlm')}"
@@ -121,6 +163,7 @@ def analyse(image: bytes, geom: Geometry, *, token: str = "",
             log.info("MinerU 放弃（%s），整张走颜色兜底", info.get("error"))
     elif not structured:
         log.info("这张图没有颜色结构：%d 格分出 %d 类，跳过 OCR", rows * cols, n)
+    say("ocr_done" if engine != "colour-only" else "skip_ocr")
 
     return Analysis(labels=labels, stats=stats, reads=reads, palette=palette,
                     engine=engine, structured=bool(structured))

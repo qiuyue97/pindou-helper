@@ -9,6 +9,7 @@ import GridConfirm, { type Geometry } from '../components/sheet/GridConfirm';
 import SheetExport from '../components/sheet/SheetExport';
 import SheetGallery from '../components/sheet/SheetGallery';
 import SheetPreview from '../components/sheet/SheetPreview';
+import SheetProgress from '../components/sheet/SheetProgress';
 import SheetReview from '../components/sheet/SheetReview';
 import SheetUpload from '../components/sheet/SheetUpload';
 import { byCode } from '../lib/sheetSort';
@@ -95,7 +96,7 @@ export default function SheetPage() {
       )}
 
       {/* 传完图没确认就切走的，回来还得能接着确认。这一状态原来没有任何分支，
-          从「最近的图纸」点进一张「等待确认网格」的，页面整个是白的。 */}
+          从「我的图纸」点进一张「等待确认网格」的，页面整个是白的。 */}
       {sheet?.status === 'ready' && (
         <GridConfirm
           guess={{
@@ -115,7 +116,7 @@ export default function SheetPage() {
       )}
 
       {sheet && (sheet.status === 'pending' || sheet.status === 'running') && (
-        <p>正在识别，这可能要一两分钟。可以先去做别的，回来结果还在。</p>
+        <SheetProgress sheet={sheet} />
       )}
 
       {sheet?.status === 'failed' && <p className="error">{sheet.error}</p>}

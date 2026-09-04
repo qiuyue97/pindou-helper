@@ -251,6 +251,10 @@ export interface Sheet {
   overrides: Record<string, string>;
   prior: Record<string, number>;
   engine: string;
+  /** 识别进行到哪一步（给用户看的一句话）。只在 running 期间有意义。 */
+  step: string;
+  /** 0-100。分段权重，不是线性时间——耗时几乎全在 OCR 那一段。 */
+  progress: number;
   /** false = 这张图的填充色是一段连续谱，整张走了颜色兜底 */
   structured: boolean;
   error: string;

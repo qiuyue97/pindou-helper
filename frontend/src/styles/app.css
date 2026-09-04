@@ -502,10 +502,13 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: 8px;
 }
+/* 一行：色号块（窄，居中）+ 间距 + 「改色号」。原来左边那块是 1fr，把整行都
+   占了，色号靠左飘着，右边的按钮被挤到边上贴着滚动条。 */
 .code-row {
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 8px;
+  grid-template-columns: minmax(3.5em, auto) 1fr auto;
+  align-items: center;
+  gap: 4px 14px;
   padding: 6px 8px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -520,16 +523,40 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .code-row.mismatch.active {
   background: rgba(215, 45, 45, 0.18);
 }
+/* 色号块：窄一点，色号居中。它是这一行的主角，居中比靠左更容易一眼扫过去。 */
 .code-row-pick {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   background: none;
   border: 0;
-  padding: 0;
-  text-align: left;
+  padding: 2px 6px;
+  text-align: center;
   cursor: pointer;
-  min-height: 32px;
+  /* iOS 上的可点面积 */
+  min-height: 44px;
+}
+/* 「改色号」：黑字、无下划线，看起来是个按钮而不是一条链接。 */
+.code-row-edit {
+  grid-column: 3;
+}
+.code-row-edit .linklike {
+  color: var(--fg);
+  text-decoration: none;
+  padding: 0 8px;
+  min-height: 36px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.code-row-edit .linklike:hover {
+  background: #f4f4f0;
+  border-color: #bdbdb5;
+}
+@media (pointer: coarse) {
+  /* 手指没有像素精度，触摸设备上给到 iOS 建议的 44 */
+  .code-row-edit .linklike { min-height: 44px; padding: 0 12px; }
 }
 .code-row .flag {
   display: inline-grid;
@@ -641,34 +668,95 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   flex-wrap: wrap;
 }
 
-.code-picker {
-  position: relative;
-  min-width: 8em;
+/* 选色号的面板。手机上从底部升起，桌面上居中。
+   它是 fixed 的，所以点开、打字、弹键盘，底下那一长串豆点都纹丝不动——原来那个
+   行内输入框一聚焦就把整页顶上去，刚数好的位置全跑没了。 */
+.code-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
 }
-/* 浮层，不占文档流。写成常驻的行内列表时，二百多个候选会把下面的卡片整个顶开。 */
-.code-picker-list {
+.code-sheet-backdrop {
   position: absolute;
-  top: 100%;
-  left: 0;
-  z-index: 30;
-  min-width: 10em;
-  max-height: 240px;
-  overflow-y: auto;
-  list-style: none;
-  margin: 2px 0 0;
+  inset: 0;
   padding: 0;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.35);
 }
-.code-picker-list button {
+.code-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(46rem, 100%);
+  max-height: 78vh;
+  padding: 12px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  border-radius: 14px 14px 0 0;
+  box-shadow: 0 -6px 28px rgba(0, 0, 0, 0.22);
+}
+@media (min-width: 641px) {
+  /* 桌面上没有「从底部升起」这回事，居中就好 */
+  .code-sheet-layer { align-items: center; }
+  .code-sheet { border-radius: 12px; max-height: 72vh; }
+}
+.code-sheet-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.code-sheet-head strong {
+  font-size: 0.95rem;
+}
+.code-sheet-head button {
+  margin-left: auto;
+}
+.code-sheet-search {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font: inherit;
+  /* 小于 16px 时 iOS 会把整页放大来就着输入框，页面于是错位 */
+  font-size: 16px;
+}
+.code-sheet-search:focus {
+  border-color: var(--accent);
+}
+/* 一片方格，不是一列小条：手机上扫颜色比读色号快得多 */
+.code-sheet-grid {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0 0 4px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 8px;
+}
+.code-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   width: 100%;
-  /* iOS 上的可点面积 */
-  min-height: 44px;
+  min-height: 68px;
+  padding: 6px 4px;
+  font-size: 0.8rem;
+}
+.code-tile .swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+}
+.code-tile[aria-selected='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 .swatch {
   display: inline-block;
@@ -687,7 +775,141 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   }
 }
 
-/* 最近的图纸：缩略图墙。切走再回来靠它找回未完成的任务，也靠它认出哪张是哪张
+/* 识别进度。原来只有一句「可能要一两分钟」，之后什么都不动——用户分不出是在
+   排队、在算还是卡死了。 */
+.sheet-progress {
+  display: grid;
+  gap: 10px;
+  max-width: 30rem;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.sheet-progress-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sheet-progress-pct {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+/* 会动的东西对前庭敏感的人不友好，关掉动画的用户就让它静止 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+  .bar-fill { transition: none; }
+}
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #ececeb;
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+/* 排队时条是空的，但要看得出「在排队」而不是「坏了」 */
+.bar-fill.idle {
+  width: 25% !important;
+  background: repeating-linear-gradient(
+    90deg, var(--accent-soft) 0 8px, #dfe9e3 8px 16px);
+  animation: slide 1.1s linear infinite;
+}
+@keyframes slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(400%); }
+}
+.sheet-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.sheet-steps li::before {
+  content: '○ ';
+}
+.sheet-steps li.done {
+  color: var(--accent);
+}
+.sheet-steps li.done::before {
+  content: '● ';
+}
+.sheet-steps li.now {
+  color: var(--fg);
+  font-weight: 600;
+}
+.sheet-steps li.now::before {
+  content: '◐ ';
+}
+.sheet-progress > .muted {
+  margin: 0;
+}
+
+/* 上传：标题、控件、说明各占一行。原来是 label + input + p 挤在同一行里，
+   「上传图纸 选择文件 未选择任何文件」连成一条，看不出层次；手机上还会被挤断。 */
+.sheet-upload {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.sheet-upload h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+/* 自己画的「选择文件」。原生控件藏在 .offscreen 里，点这个 label 等价于点它。 */
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 40px;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.file-button:hover {
+  background: #f4f4f0;
+  border-color: #bdbdb5;
+}
+.file-button.is-busy {
+  opacity: 0.55;
+  pointer-events: none;
+}
+.sheet-upload .file-name {
+  /* 长文件名不该把这一块撑破 */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-upload .muted {
+  margin: 0;
+}
+
+/* 我的图纸：缩略图墙。切走再回来靠它找回未完成的任务，也靠它认出哪张是哪张
    ——十张 65×65 的行列数一模一样，光靠 id 和日期分不出来。
    每行几个由可用宽度定（auto-fill + minmax），不写死断点。 */
 .sheet-gallery h3 {
@@ -848,9 +1070,8 @@ button.danger:hover:not(:disabled) {
     repeating-linear-gradient(45deg, #fff 0 4px, #d0d3d8 4px 8px);
   border: 1px solid #b6bac0;
 }
-.code-picker-list .blank-option {
+.code-sheet-grid .blank-option {
   font-weight: 600;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
 }
 
 /* 预览缩放：重画放大，不是 CSS 拉伸，所以怎么放都清晰。 */

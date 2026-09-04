@@ -315,6 +315,9 @@ class SheetOut(BaseModel):
     overrides: dict[str, str] = {}
     prior: dict[str, int] = {}
     engine: str = ""
+    #: 识别进行到哪一步（给用户看的一句话）和 0-100 的进度。只在 running 期间有意义。
+    step: str = ""
+    progress: int = 0
     #: false = 这张图的填充色是一段连续谱而不是几十个分立的类，整张走了颜色兜底
     structured: bool = True
     error: str = ""

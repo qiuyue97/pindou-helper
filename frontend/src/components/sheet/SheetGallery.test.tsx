@@ -1,5 +1,5 @@
 /**
- * 最近的图纸：缩略图墙。
+ * 我的图纸：缩略图墙。
  *
  * 原来是一列纯文字链接。图纸是**靠看认出来的**——十张 65×65 的行列数一模一样，
  * 日期也记不住，光靠 id 分不出哪张是哪张。所以这里盯三件事：缩略图确实是缩略图
@@ -27,7 +27,7 @@ function sheet(over: Partial<Sheet> = {}): Sheet {
     width: 100, height: 100, rect: [0, 0, 20, 20], rows: 65, cols: 65,
     has_blanks: false, palette: '221', snap_x: [], snap_y: [],
     labels: [], classes: [], counts: [], overrides: {}, prior: {},
-    engine: 'mineru/vlm', structured: true, error: '', seen: true, tally: {},
+    engine: 'mineru/vlm', step: '', progress: 100, structured: true, error: '', seen: true, tally: {},
     created_at: '2026-09-04T01:05:03Z', finished_at: null,
     ...over,
   } as Sheet;
@@ -55,7 +55,7 @@ beforeEach(() => {
 
 it('一张都没有时整块不显示', () => {
   show([]);
-  expect(screen.queryByText('最近的图纸')).toBeNull();
+  expect(screen.queryByText('我的图纸')).toBeNull();
 });
 
 it('缩略图走 /thumb，不是几 MB 的原图', () => {

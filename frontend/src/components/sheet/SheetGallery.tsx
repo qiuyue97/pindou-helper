@@ -23,7 +23,7 @@ const HOLD_SLOP = 8;
 const MOUSE_SLOP = 5;
 
 /**
- * 最近的图纸：缩略图墙。
+ * 我的图纸：缩略图墙。
  *
  * 原来是一列纯文字链接（`#10 65×65 已完成 2026/9/4`）。图纸这东西**是靠看认出来
  * 的**——十张 65×65 的行列数一模一样，日期也记不住，光靠 id 根本分不出哪张是哪张。
@@ -199,7 +199,7 @@ export default function SheetGallery({ sheets }: { sheets: Sheet[] }) {
   if (sheets.length === 0) return null;
   return (
     <section className="sheet-gallery">
-      <h3>最近的图纸</h3>
+      <h3>我的图纸</h3>
       <p className="muted">点开继续；按住可以拖动排序。</p>
       {/* biome-ignore lint/a11y/useKeyboardEvents: 卡片里有真的按钮和链接走键盘，
           这一层只是叠加的拖动手势 */}

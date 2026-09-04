@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CountRow, Sheet } from '../../api/types';
 import { type Rect, cellRect } from '../../lib/sheetGeometry';
 import { BLANK_CODE, groupByCode } from '../../lib/sheetSort';
-import CodePicker from './CodePicker';
+import CodeSheet from './CodeSheet';
 
 /** 每格在校对网格里画多大（设备像素）。够看清印在上面的色号。 */
 const TILE = 44;
@@ -115,6 +115,7 @@ function CodeColumn({
   onCount: (row: CountRow, n: number | null) => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
+  const edited = rows.find((r) => r.code === editing) ?? null;
 
   return (
     <ul className="code-column" aria-label="色号列表">
@@ -150,29 +151,19 @@ function CodeColumn({
               <strong>{row.code === BLANK_CODE ? '空白格' : row.code}</strong>
             </button>
 
+            {/* 按钮**不消失**。原来点一下按钮就地变成输入框，界面在手底下变形，
+                用户还得重新找刚才点的地方；现在它一直在，面板盖在上面。 */}
             <div className="code-row-edit">
-              {editing === row.code ? (
-                <CodePicker
-                  value={row.code}
-                  scope={palette}
-                  autoFocus
-                  allowBlank={allowBlank && row.code !== BLANK_CODE}
-                  label={`${row.code} 的新色号`}
-                  onChange={(code) => {
-                    setEditing(null);
-                    onRename(row, code);
-                  }}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="linklike"
-                  aria-label={`改色号 ${row.code}`}
-                  onClick={() => setEditing(row.code)}
-                >
-                  改色号
-                </button>
-              )}
+              <button
+                type="button"
+                className="linklike"
+                aria-label={`改色号 ${row.code}`}
+                aria-haspopup="dialog"
+                aria-expanded={editing === row.code}
+                onClick={() => setEditing(row.code)}
+              >
+                改色号
+              </button>
             </div>
 
             <dl className="code-row-counts">
@@ -197,6 +188,19 @@ function CodeColumn({
           </li>
         );
       })}
+      {edited && (
+        <CodeSheet
+          title={`把 ${edited.code === BLANK_CODE ? '空白格' : edited.code} 整类改成`}
+          value={edited.code}
+          scope={palette}
+          allowBlank={allowBlank && edited.code !== BLANK_CODE}
+          onPick={(code) => {
+            setEditing(null);
+            onRename(edited, code);
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </ul>
   );
 }
@@ -252,6 +256,7 @@ function CellPane({
   const ref = useRef<HTMLCanvasElement>(null);
   const [page, setPage] = useState(0);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [picking, setPicking] = useState(false);
   const { cols } = sheet;
 
   // 按住拖选。单击某格照旧是勾/取消；按住往外拖，把落点之间的格子**按阅读顺序**
@@ -504,21 +509,33 @@ function CellPane({
       {list.length === 0 ? (
         <p className="muted">选中豆点后可以改它们的色号。改整个色号请用左边那一栏。</p>
       ) : (
+        // 原来这里直接摆一个输入框：手机上一点它，iOS 就把它滚进视野，整页往上跳，
+        // 刚数好的豆点全跑没了。改成一个按钮 + 浮层面板，页面纹丝不动。
         <div className="cell-actions">
-          <span>已选 {list.length} 个 →</span>
-          <CodePicker
-            value=""
-            scope={sheet.palette}
-            allowBlank={sheet.has_blanks}
-            label="把选中的豆点改成"
-            onChange={(code) => {
-              onPatchCells(
-                list.map((flat) => ({ r: Math.floor(flat / cols), c: flat % cols, code })),
-              );
-              setPicked(new Set());
-            }}
-          />
+          <span>已选 {list.length} 个</span>
+          <button type="button" className="primary" onClick={() => setPicking(true)}>
+            改成…
+          </button>
+          <button type="button" className="ghost" onClick={() => setPicked(new Set())}>
+            取消选择
+          </button>
         </div>
+      )}
+
+      {picking && (
+        <CodeSheet
+          title={`把选中的 ${list.length} 个豆点改成`}
+          scope={sheet.palette}
+          allowBlank={sheet.has_blanks}
+          onPick={(code) => {
+            setPicking(false);
+            onPatchCells(
+              list.map((flat) => ({ r: Math.floor(flat / cols), c: flat % cols, code })),
+            );
+            setPicked(new Set());
+          }}
+          onClose={() => setPicking(false)}
+        />
       )}
     </div>
   );

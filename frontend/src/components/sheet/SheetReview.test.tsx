@@ -225,6 +225,7 @@ it('点左栏切换右侧', () => {
 it('选中豆点改色号，只改选中的那几个', () => {
   const { onPatchCells } = setup();
   fireEvent.click(screen.getByRole('checkbox', { name: '第 1 行第 1 列' }));
+  fireEvent.click(screen.getByRole('button', { name: '改成…' }));
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'M3' } });
   fireEvent.click(screen.getByRole('option', { name: 'M3' }));
   expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 0, code: 'M3' }]);
@@ -234,6 +235,7 @@ it('多选一次改掉几个', () => {
   const { onPatchCells } = setup();
   fireEvent.click(screen.getByRole('checkbox', { name: '第 1 行第 1 列' }));
   fireEvent.click(screen.getByRole('checkbox', { name: '第 1 行第 2 列' }));
+  fireEvent.click(screen.getByRole('button', { name: '改成…' }));
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'M3' } });
   fireEvent.click(screen.getByRole('option', { name: 'M3' }));
   expect(onPatchCells).toHaveBeenCalledWith([
@@ -387,6 +389,7 @@ it('有空格的图纸把空格单列一行，选得中也改得回来', () => {
 
   // 把一格空白改成真色号
   fireEvent.click(screen.getAllByRole('checkbox')[0]!);
+  fireEvent.click(screen.getByRole('button', { name: '改成…' }));
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'B8' } });
   fireEvent.click(screen.getByRole('option', { name: 'B8' }));
   expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 2, code: 'B8' }]);
@@ -401,7 +404,7 @@ it('有空格的图纸上，改豆点可以改成空白格', () => {
   const s = makeSheet({ has_blanks: true });
   const { onPatchCells } = setup(s);
   fireEvent.click(screen.getAllByRole('checkbox')[0]!);
-  fireEvent.focus(screen.getByRole('combobox'));
+  fireEvent.click(screen.getByRole('button', { name: '改成…' }));
   fireEvent.click(screen.getByRole('option', { name: '空白格' }));
   expect(onPatchCells).toHaveBeenCalledWith([{ r: 0, c: 0, code: '-' }]);
 });
@@ -419,6 +422,7 @@ it('按住往外拖，落点之间的豆点按阅读顺序连选，跨行自动�
 
   // pageCells 里 0..8 之间是 [0,1,4,5,8] —— 跨了第 0/1/2 行
   expect(screen.getByText(/已选 5 个/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '改成…' }));
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'M3' } });
   fireEvent.click(screen.getByRole('option', { name: 'M3' }));
   expect(onPatchCells).toHaveBeenCalledWith([

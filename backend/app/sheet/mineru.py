@@ -103,7 +103,8 @@ def _order_of(res, want: int) -> int | None:
 
 
 def parse_pages(pngs: list[bytes], token: str, *, model: str = "vlm",
-                poll: float = 1.0, timeout: float = 600.0) -> list[str]:
+                poll: float = 1.0, timeout: float = 600.0,
+                on_page=None) -> list[str]:
     """一批提交多张 PNG，按提交顺序返回各自解析出的文本。
 
     一次请求带上所有页，而不是一页一个请求：批次是服务端的调度单位，拆开只会多排
@@ -141,6 +142,10 @@ def parse_pages(pngs: list[bytes], token: str, *, model: str = "vlm",
             k = i if k is None else k
             if res.get("state") == "done" and k < len(out) and out[k] is None:
                 out[k] = _markdown_of(res)
+        # 轮询本来就要转一圈，顺手把「读完几页了」报出去：整条流水线的耗时几乎
+        # 全在这里，没有这个回报，进度条就只能在 OCR 那一档干等着。
+        if on_page:
+            on_page(sum(v is not None for v in out), len(out))
         if all(v is not None for v in out):
             return out  # type: ignore[return-value]
         time.sleep(poll)
@@ -153,7 +158,7 @@ def parse(png: bytes, token: str, **kw) -> str:
 
 
 def read_classes(pics, valid, token: str, *, model: str = "vlm",
-                 attempts: int = 5, timeout: float = 600.0):
+                 attempts: int = 5, timeout: float = 600.0, on_page=None):
     """一次请求读完所有类的字形，或者放弃并说清楚原因。
 
     返回 `(每个类的色号或 None, info)`。整体返回 `None` 表示服务用不了，调用方
@@ -186,8 +191,15 @@ def read_classes(pics, valid, token: str, *, model: str = "vlm",
         if not todo:
             break
         try:
+            # 报的是**整批**的进度，不是这一轮的：重试只重读坏掉的那几页，
+            # 已经读好的不该从进度条上退回去。绑成默认参数，免得闭包抓着循环变量。
+            def relay(k: int, _n: int, *, base=len(done) - len(todo),
+                      total=len(done)) -> None:
+                on_page(base + k, total)
+
             texts = parse_pages([pngs[i] for i in todo], token, model=model,
-                                timeout=timeout)
+                                timeout=timeout,
+                                on_page=relay if on_page else None)
         except Exception as e:  # noqa: BLE001 — 传输失败整批重来
             info["error"] = f"{type(e).__name__}: {e}"
             log.info("mineru 第 %d/%d 次失败：%s", attempt, attempts, info["error"])

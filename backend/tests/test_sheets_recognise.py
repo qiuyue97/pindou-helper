@@ -203,3 +203,58 @@ def test_deleting_removes_the_record(vip, uploaded):  # noqa: F811
     sid, _ = uploaded
     assert vip.delete(f"/api/sheets/{sid}", headers=XRW).status_code == 204
     assert vip.get(f"/api/sheets/{sid}").status_code == 404
+
+
+# ------------------------------------------------------------------ 进度 --
+#
+# 识别是后台线程跑的，用户那边只能看见状态字段。没有进度，整个过程就是一句
+# 「可能要一两分钟」——用户分不出是在排队、在算，还是已经卡死了。
+
+
+def test_progress_lands_on_100_when_done(vip, uploaded):  # noqa: F811
+    sid, s = uploaded
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    d = _wait(vip, sid)
+    assert d["progress"] == 100
+    assert d["step"] == ""          # 干完了就不该再报「正在做什么」
+
+
+def test_progress_climbs_while_running(vip, uploaded):  # noqa: F811
+    """跑的过程中 step 和 progress 都得真的动起来。"""
+    sid, s = uploaded
+    seen: set[tuple[str, int]] = set()
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        d = vip.get(f"/api/sheets/{sid}").json()
+        seen.add((d["step"], d["progress"]))
+        if d["status"] == "done":
+            break
+        time.sleep(0.005)
+    # 至少见过一个「正在做某事」的中间态，而不是从 0 直接跳 100
+    mid = {p for step, p in seen if step and 0 < p < 100}
+    assert mid, f"没见到任何中间进度：{seen}"
+
+
+def test_a_failed_run_clears_the_progress(vip, uploaded, monkeypatch):  # noqa: F811
+    """失败了还留着半截进度条，比没有进度条更让人困惑。"""
+    from app.routers import sheets as mod
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mod.pipeline, "analyse", boom)
+    sid, s = uploaded
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    d = _wait(vip, sid, status="failed")
+    assert d["progress"] == 0
+    assert d["step"] == ""
+
+
+def test_progress_resets_when_recognising_again(vip, uploaded):  # noqa: F811
+    sid, s = uploaded
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    _wait(vip, sid)
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    d = vip.get(f"/api/sheets/{sid}").json()
+    assert d["progress"] < 100      # 不能还挂着上一次的 100

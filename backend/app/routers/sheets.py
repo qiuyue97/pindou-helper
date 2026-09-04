@@ -91,7 +91,8 @@ def _row(s: Sheet) -> SheetOut:
         palette=s.palette, snap_x=s.snap_x or [], snap_y=s.snap_y or [],
         labels=s.labels or [], classes=s.classes or [], counts=s.counts or [],
         overrides=s.overrides or {}, prior=s.prior or {},
-        engine=s.engine, structured=s.structured, error=s.error, seen=s.seen,
+        engine=s.engine, step=s.step or "", progress=s.progress,
+        structured=s.structured, error=s.error, seen=s.seen,
         tally=tally(s.labels or [], s.classes or [], s.overrides or {},
                     s.rows, s.cols),
         created_at=s.created_at, finished_at=s.finished_at,
@@ -201,9 +202,14 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
                 setattr(s, k, v)
             session.commit()
 
-    update(status="running")
+    # 并发闸门是先到先得的，所以「排队中」和「已经在算」得分得开：卡在这里的图纸
+    # 什么都没发生，进度条不该动。
+    update(status="running", step="排队等前面的图纸", progress=0)
     with _semaphore(settings):
         try:
+            def on_step(text: str, pct: int) -> None:
+                update(step=text, progress=pct)
+
             # CV 和 AI 抽取并行：CV 不需要等先验才能开始，先验只在定案那一步筛答案。
             with ThreadPoolExecutor(max_workers=2) as pool:
                 fut_prior = pool.submit(_fetch_prior, name, data, settings)
@@ -211,6 +217,7 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
                     pipeline.analyse, data, geom,
                     token=settings.mineru_token,
                     timeout=settings.mineru_timeout,
+                    on_step=on_step,
                 )
                 analysis = fut_cv.result()
                 try:
@@ -223,17 +230,18 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
             # 先验比 CV 晚到，所以定案单独一步。这里**绝不能**改成整条重跑
             # pipeline.recognise —— 那会再发一次 MinerU 请求，花第二份配额和钱，
             # 还要重新采样、重新聚类。finalise 是纯计算。
+            update(step="对账定案", progress=92)
             res = pipeline.finalise(analysis, prior or None)
         except Exception as exc:  # noqa: BLE001 — 线程里任何异常都必须落库
             log.warning("图纸识别失败 sheet=%s: %s", sheet_id, exc)
-            update(status="failed",
+            update(status="failed", step="", progress=0,
                    error=str(exc)[:300] if isinstance(exc, ValueError) else "识别失败",
                    finished_at=datetime.now(UTC))
             return
 
         update(status="done", labels=res.labels, classes=res.classes,
                counts=res.counts, prior=prior, engine=res.engine,
-               structured=res.structured, error="",
+               structured=res.structured, error="", step="", progress=100,
                finished_at=datetime.now(UTC))
         log.info("图纸识别完成 sheet=%s engine=%s 类数=%d",
                  sheet_id, res.engine, len(res.classes))
@@ -267,6 +275,7 @@ def start_recognise(
     sheet.has_blanks, sheet.palette = body.has_blanks, body.palette
     sheet.status = "pending"
     sheet.error = ""
+    sheet.step, sheet.progress = "", 0
     # 重新识别会作废之前的人工修正：类的编号变了，overrides 的坐标虽然还在，
     # 但它指向的类已经不是原来那个。留着比清掉更让人困惑。
     sheet.overrides = {}
