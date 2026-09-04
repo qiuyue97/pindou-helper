@@ -127,7 +127,7 @@ export default function SheetPage() {
           <SheetPreview sheet={sheet} />
           <div className="sheet-actions">
             <button type="button" onClick={() => setDeducting(true)}>
-              把这份清单送去按图扣减
+              按此图扣减
             </button>
             <SheetExport sheet={sheet} />
             <button type="button" className="ghost" onClick={() => navigate('/sheet')}>

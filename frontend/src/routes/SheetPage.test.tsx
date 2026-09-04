@@ -181,7 +181,7 @@ it('一键把修正后的清单送去按图扣减，按色号顺序排', async (
     'GET /api/colors': { body: [] },
   });
   show(1);
-  fireEvent.click(await screen.findByRole('button', { name: /按图扣减/ }));
+  fireEvent.click(await screen.findByRole('button', { name: '按此图扣减' }));
   await waitFor(() => {
     const box = screen.getByRole('textbox');
     expect((box as HTMLTextAreaElement).value).toBe('A2, 5\nA10, 3');
