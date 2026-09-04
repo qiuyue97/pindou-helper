@@ -102,7 +102,7 @@ export default function SheetPage() {
             id="gen-file"
             title="生成图纸"
             hint="把任意一张图片切成拼豆图纸。传完之后框一块、定好豆阵大小就行。"
-            detect={false}
+            kind="generate"
             onUploaded={setSeed}
           />
           <SheetGallery sheets={recent?.sheets ?? []} />
@@ -117,24 +117,15 @@ export default function SheetPage() {
         <CropConfirm guess={seed} onConfirm={(g) => void generate(seed.id, g)} />
       )}
 
-      {/* 传完图没确认就切走的，回来还得能接着确认。这一状态原来没有任何分支，
-          从「我的图纸」点进一张「等待确认网格」的，页面整个是白的。 */}
+      {/* 传完图没确认就切走的，回来还得能接着确认——而且要回到**它自己那条路**
+          的界面。只看 status 的话，一张传去生成的照片会被当成待确认网格的图纸，
+          弹出角点界面，用户根本没法接着做。 */}
       {sheet?.status === 'ready' && (
-        <GridConfirm
-          guess={{
-            id: sheet.id,
-            width: sheet.width,
-            height: sheet.height,
-            rect: sheet.rect,
-            rows: sheet.rows,
-            cols: sheet.cols,
-            snap_x: sheet.snap_x,
-            snap_y: sheet.snap_y,
-            // 检测失败时存下来的行列数就是 0，和刚上传时是同一回事
-            source: sheet.rows > 0 && sheet.cols > 0 ? 'lattice' : 'manual',
-          }}
-          onConfirm={(g) => void start(sheet.id, g)}
-        />
+        sheet.kind === 'generate' ? (
+          <CropConfirm guess={asGuess(sheet)} onConfirm={(g) => void generate(sheet.id, g)} />
+        ) : (
+          <GridConfirm guess={asGuess(sheet)} onConfirm={(g) => void start(sheet.id, g)} />
+        )
       )}
 
       {sheet && (sheet.status === 'pending' || sheet.status === 'running') && (
@@ -157,8 +148,12 @@ export default function SheetPage() {
               识别另一张
             </button>
           </div>
+          {/* 生成出来的图纸不给逐格改色：那些色号是照着照片算出来的最近色，
+              没有「读错了」这回事，逐格挑更像是在图上乱点。整类换色照旧留着
+              ——「这个色号我没货，整片换掉」是真需求。 */}
           <SheetReview
             sheet={sheet}
+            cellEdit={sheet.kind !== 'generate'}
             onRecode={(code, to) => void patch('/recode', { code, to })}
             onPatchPrior={(prior) => void patch('/prior', { prior })}
             onPatchCells={(patches) => void patch('/cells', { patches })}
@@ -177,6 +172,22 @@ export default function SheetPage() {
       )}
     </main>
   );
+}
+
+/** 存下来的图纸 → 刚上传时那份猜测。两个确认界面吃的是同一种输入。 */
+function asGuess(sheet: Sheet): SheetGuess {
+  return {
+    id: sheet.id,
+    width: sheet.width,
+    height: sheet.height,
+    rect: sheet.rect,
+    rows: sheet.rows,
+    cols: sheet.cols,
+    snap_x: sheet.snap_x,
+    snap_y: sheet.snap_y,
+    // 检测失败时存下来的行列数就是 0，和刚上传时是同一回事
+    source: sheet.rows > 0 && sheet.cols > 0 ? 'lattice' : 'manual',
+  };
 }
 
 /** 把这次识别到底发生了什么如实说清楚。 */

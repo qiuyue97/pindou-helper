@@ -170,11 +170,11 @@ def test_regenerating_drops_the_old_hand_edits(vip, uploaded):  # noqa: F811
 # ------------------------------------------------------------ 上传时跳检测 --
 
 
-def test_upload_can_skip_lattice_detection(vip, photo):  # noqa: F811
+def test_upload_for_generating_skips_lattice_detection(vip, photo):  # noqa: F811
     """照片上没有点阵可找。白跑一趟还会给出一个莫名其妙的初始框。"""
     r = vip.post("/api/sheets",
                  files={"file": ("p.png", io.BytesIO(photo), "image/png")},
-                 data={"detect": "false"}, headers=XRW)
+                 data={"kind": "generate"}, headers=XRW)
     assert r.status_code == 201, r.text
     g = r.json()
     assert g["source"] == "manual"
@@ -187,3 +187,35 @@ def test_upload_still_detects_by_default(vip, grid_png):  # noqa: F811
     g = _upload(vip, grid_png).json()
     assert g["source"] == "lattice"
     assert g["rows"] > 0 and g["cols"] > 0
+
+
+# -------------------------------------------------------------------- kind --
+#
+# 两条路的产物结构一样、过程完全不同。只看 status 的话，一张传去生成的照片会被
+# 当成「待确认网格」的图纸，用户回来时弹出的是角点界面而不是框选界面。
+
+
+def test_an_upload_remembers_which_path_it_came_from(vip, photo, grid_png):  # noqa: F811
+    gen = vip.post("/api/sheets",
+                   files={"file": ("p.png", io.BytesIO(photo), "image/png")},
+                   data={"kind": "generate"}, headers=XRW).json()["id"]
+    rec = _upload(vip, grid_png).json()["id"]
+    assert vip.get(f"/api/sheets/{gen}").json()["kind"] == "generate"
+    assert vip.get(f"/api/sheets/{rec}").json()["kind"] == "recognise"
+
+
+def test_kind_survives_being_abandoned_half_way(vip, photo):  # noqa: F811
+    """传完就走、回来再点进去——那时还没生成，全靠 kind 决定进哪个界面。"""
+    sid = vip.post("/api/sheets",
+                   files={"file": ("p.png", io.BytesIO(photo), "image/png")},
+                   data={"kind": "generate"}, headers=XRW).json()["id"]
+    d = vip.get(f"/api/sheets/{sid}").json()
+    assert d["status"] == "ready" and d["kind"] == "generate"
+
+
+def test_generating_sets_the_kind_even_if_it_was_uploaded_the_other_way(vip, grid_png):  # noqa: F811
+    sid = _upload(vip, grid_png).json()["id"]
+    vip.post(f"/api/sheets/{sid}/generate",
+             json={"rect": [0, 0, 100, 100], "rows": 6, "cols": 6,
+                   "palette": "221", "style": "dpid"}, headers=XRW)
+    assert _wait(vip, sid)["kind"] == "generate"

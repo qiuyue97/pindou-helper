@@ -295,6 +295,8 @@ class SheetGuessOut(BaseModel):
 
 class SheetOut(BaseModel):
     id: int
+    #: "recognise" | "generate"。两条路的界面和能做的操作都不一样。
+    kind: str = "recognise"
     #: 用户起的名字。空 = 没起过，前端显示 #id。
     name: str = ""
     #: 列表里的排序位。小的在前，同位按 id 倒序。

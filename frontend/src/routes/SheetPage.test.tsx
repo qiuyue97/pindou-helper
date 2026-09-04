@@ -32,6 +32,7 @@ vi.mock('../state/useEffectiveCatalog', () => ({
 function sheet(over: Partial<Sheet> = {}): Sheet {
   return {
     id: 1,
+    kind: 'recognise',
     name: '',
     position: 0,
     status: 'done',
@@ -334,7 +335,7 @@ it('「生成图纸」夹在「上传图纸」和「我的图纸」中间', asyn
   ]);
 });
 
-it('生成那条路上传时不跑点阵检测——照片上没有点阵可找', async () => {
+it('生成那条路上传时说明自己是哪一路——顺带跳过点阵检测', async () => {
   mockFetch({
     'GET /api/sheets': { body: { sheets: [], running: 0 } },
     'POST /api/sheets': { body: SEED, status: 201 },
@@ -345,7 +346,7 @@ it('生成那条路上传时不跑点阵检测——照片上没有点阵可找'
   });
   await screen.findByLabelText('框选范围');
   const body = lastRequest('POST', '/api/sheets')!.init!.body as FormData;
-  expect(body.get('detect')).toBe('false');
+  expect(body.get('kind')).toBe('generate');
 });
 
 it('识别那条路照旧跑检测', async () => {
@@ -359,7 +360,7 @@ it('识别那条路照旧跑检测', async () => {
   });
   await screen.findByLabelText('网格范围');
   const body = lastRequest('POST', '/api/sheets')!.init!.body as FormData;
-  expect(body.get('detect')).toBe('true');
+  expect(body.get('kind')).toBe('recognise');
 });
 
 it('框好之后开始生成，参数一并送上去', async () => {
@@ -390,4 +391,40 @@ it('生成出来的图纸不说识别那几句话——它没有图例，也没�
   show(1);
   expect(await screen.findByText(/轮廓优先/)).toBeInTheDocument();
   expect(screen.queryByText(/没有拿到图例/)).toBeNull();
+});
+
+
+it('传去生成的图片半途退出，回来进的是框选界面而不是角点界面', async () => {
+  // 只看 status 的话，一张待处理的照片会被当成「等待确认网格」的图纸
+  mockFetch({
+    'GET /api/sheets/1': { body: sheet({ kind: 'generate', status: 'ready' }) },
+  });
+  show(1);
+  expect(await screen.findByLabelText('框选范围')).toBeInTheDocument();
+  expect(screen.queryByLabelText('网格范围')).toBeNull();
+});
+
+it('识别那条半途退出，回来还是角点界面', async () => {
+  mockFetch({ 'GET /api/sheets/1': { body: sheet({ status: 'ready' }) } });
+  show(1);
+  expect(await screen.findByLabelText('网格范围')).toBeInTheDocument();
+  expect(screen.queryByLabelText('框选范围')).toBeNull();
+});
+
+it('生成出来的图纸不给逐格改色——没有「读错了」这回事', async () => {
+  mockFetch({
+    'GET /api/sheets/1': { body: sheet({ kind: 'generate', engine: 'generate/slic' }) },
+  });
+  show(1);
+  await screen.findByLabelText('色号列表');
+  expect(screen.queryByText(/共 \d+ 个豆点/)).toBeNull();
+  expect(screen.getByText(/没有需要逐格订正的地方/)).toBeInTheDocument();
+  // 整类换色照旧留着——「这个色号我没货，整片换掉」是真需求
+  expect(screen.getByRole('button', { name: /改色号/ })).toBeInTheDocument();
+});
+
+it('识别出来的图纸照旧能逐格改色', async () => {
+  mockFetch({ 'GET /api/sheets/1': { body: sheet() } });
+  show(1);
+  expect(await screen.findByText(/共 \d+ 个豆点/)).toBeInTheDocument();
 });

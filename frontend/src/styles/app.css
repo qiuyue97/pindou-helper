@@ -920,6 +920,17 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   display: block;
   margin: 0 0 10px;
 }
+/* 两类分开列：识别来的和照片转的能做的事不一样（后者不逐格改色），混在一起
+   光看缩略图分不出来。 */
+.sheet-group + .sheet-group {
+  margin-top: 14px;
+}
+.sheet-group h4 {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
 .sheet-grid {
   list-style: none;
   margin: 0;

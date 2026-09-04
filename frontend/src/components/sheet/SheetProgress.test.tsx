@@ -11,7 +11,7 @@ import SheetProgress from './SheetProgress';
 
 function sheet(over: Partial<Sheet> = {}): Sheet {
   return {
-    id: 1, name: '', position: 0, status: 'running',
+    id: 1, kind: 'recognise', name: '', position: 0, status: 'running',
     width: 100, height: 100, rect: [], rows: 10, cols: 10,
     has_blanks: false, palette: '221', snap_x: [], snap_y: [],
     labels: [], classes: [], counts: [], overrides: {}, prior: {},
@@ -69,4 +69,26 @@ it('越界的进度值夹回 0..100，不会画出格', () => {
 it('照旧告诉用户可以先去做别的', () => {
   render(<SheetProgress sheet={sheet({ progress: 20 })} />);
   expect(screen.getByText(/可以先去做别的/)).toBeInTheDocument();
+});
+
+
+// ---------- 两条路的步骤不一样 ----------
+
+it('生成图纸报的是生成的步骤，不是识别的', () => {
+  render(<SheetProgress sheet={sheet({ kind: 'generate', step: '配色卡', progress: 75 })} />);
+  const steps = screen.getAllByRole('listitem').map((li) => li.textContent);
+  expect(steps).toEqual(['读取图片', '归拢像素', '配色卡', '清理孤点']);
+  // 生成这条路上根本没有 OCR，也没有图例可以对账
+  expect(steps).not.toContain('识别色号');
+  expect(steps).not.toContain('对账定案');
+});
+
+it('识别那条路照旧', () => {
+  render(<SheetProgress sheet={sheet({ step: '识别色号', progress: 45 })} />);
+  expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toContain('对账定案');
+});
+
+it('还没报出步骤时，说的动词也要对', () => {
+  render(<SheetProgress sheet={sheet({ kind: 'generate', progress: 20 })} />);
+  expect(screen.getByText('正在生成')).toBeInTheDocument();
 });

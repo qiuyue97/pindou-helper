@@ -96,7 +96,7 @@ def _semaphore(settings: Settings) -> threading.Semaphore:
 
 def _row(s: Sheet) -> SheetOut:
     return SheetOut(
-        id=s.id, name=s.name or "", position=s.position,
+        id=s.id, kind=s.kind or "recognise", name=s.name or "", position=s.position,
         status=s.status, width=s.width, height=s.height,
         rect=s.rect or [], rows=s.rows, cols=s.cols, has_blanks=s.has_blanks,
         palette=s.palette, snap_x=s.snap_x or [], snap_y=s.snap_y or [],
@@ -113,7 +113,7 @@ def _row(s: Sheet) -> SheetOut:
 @router.post("/sheets", response_model=SheetGuessOut, status_code=201)
 async def create_sheet(
     file: UploadFile = File(...),
-    detect: bool = Form(True),
+    kind: str = Form("recognise"),
     user: User = Depends(require_vip),
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
@@ -142,12 +142,14 @@ async def create_sheet(
 
     # 生成图纸传的是照片，上面没有点阵可找——白跑一趟检测还会给出一个莫名其妙的
     # 初始框，不如直接给整图。
-    guess = pipeline.detect(data) if detect else None
+    generating = kind == "generate"
+    guess = None if generating else pipeline.detect(data)
     stored = save_upload(settings.upload_dir, user.id,
                          file.filename or "sheet.png", data)
 
     sheet = Sheet(
-        user_id=user.id, status="ready", image=stored, width=w, height=h,
+        user_id=user.id, kind="generate" if generating else "recognise",
+        status="ready", image=stored, width=w, height=h,
         # 检测不到点阵不是失败：给整图的框、空的吸附靶点，用户自己拖框填行列数。
         # 下游只吃 (rect, rows, cols, has_blanks)，手动和自动之后完全一样。
         rect=guess.rect if guess else [0.0, 0.0, float(w), float(h)],
@@ -286,6 +288,7 @@ def start_recognise(
 
     sheet.rect = list(body.rect)
     sheet.rows, sheet.cols = body.rows, body.cols
+    sheet.kind = "recognise"
     sheet.has_blanks, sheet.palette = body.has_blanks, body.palette
     sheet.status = "pending"
     sheet.error = ""
@@ -416,6 +419,7 @@ def start_generate(
 
     sheet.rect = list(body.rect)
     sheet.rows, sheet.cols = body.rows, body.cols
+    sheet.kind = "generate"
     sheet.has_blanks, sheet.palette = False, body.palette
     sheet.status, sheet.error = "pending", ""
     sheet.step, sheet.progress = "", 0

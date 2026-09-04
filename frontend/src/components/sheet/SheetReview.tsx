@@ -24,6 +24,12 @@ export interface SheetReviewProps {
   onPatchPrior: (prior: Record<string, number>) => void;
   /** 改单个/多个豆点 */
   onPatchCells: (patches: CellPatch[]) => void;
+  /**
+   * 给不给逐格改色。生成出来的图纸**不给**：那些色号是照着照片算出来的最近色，
+   * 没有「读错了」这回事，逐格挑更像是在图上乱点；而且右边那些缩略图是从原照片
+   * 上裁的，对生成的图纸来说只是照片碎片，看着更让人糊涂。
+   */
+  cellEdit?: boolean;
 }
 
 /**
@@ -44,6 +50,7 @@ export default function SheetReview({
   onRecode,
   onPatchPrior,
   onPatchCells,
+  cellEdit = true,
 }: SheetReviewProps) {
   // 空格自己单列一行。它不在 counts 里（空格不是色号，不进任何统计），可要是
   // 不列出来，被识别成空白的格子就再也选不中、改不回去了。
@@ -85,7 +92,12 @@ export default function SheetReview({
           onPatchPrior(next);
         }}
       />
-      {current ? (
+      {!cellEdit ? (
+        <p className="muted">
+          生成出来的图纸每一格都是照着照片配的最近色，没有需要逐格订正的地方。
+          左边那一栏可以整类换色号——比如某个颜色手头没货，整片换掉。
+        </p>
+      ) : current ? (
         <CellPane key={current.code} sheet={sheet} row={current} onPatchCells={onPatchCells} />
       ) : (
         <p className="muted">这张图纸没有识别出任何色号。</p>

@@ -229,6 +229,8 @@ export interface CountRow {
 
 export interface Sheet {
   id: number;
+  /** 识别别人的图纸，还是从照片生成的。两条路能做的操作不一样。 */
+  kind: 'recognise' | 'generate';
   /** 用户起的名字。空 = 没起过，列表里显示 #id。 */
   name: string;
   /** 列表里的排序位。小的在前，同位按 id 倒序。 */

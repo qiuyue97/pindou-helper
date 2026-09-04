@@ -122,6 +122,14 @@ class Sheet(Base):
     #: ready = 检测完了等用户确认几何；done 包含「什么都没读出来」这种正常产出
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
 
+    #: "recognise" = 识别别人的图纸；"generate" = 从照片生成。
+    #:
+    #: 两条路**产物结构一样、过程完全不同**：识别要读色号、要对账、每一格都可能
+    #: 读错所以要能逐格改；生成的色号是照着照片算出来的最近色，没有「错」这回事。
+    #: 上传完还没处理的图纸也要靠它决定回来时该进哪个界面——只看 status 的话，
+    #: 一张传去生成的照片会被当成待确认网格的图纸，弹出角点界面。
+    kind: Mapped[str] = mapped_column(String(10), default="recognise", index=True)
+
     #: 用户给这张图纸起的名字。空 = 没起过，列表里显示 #id。
     #: 起名是给人看的，不参与任何计算，所以随便改、随便空。
     name: Mapped[str] = mapped_column(String(80), default="")

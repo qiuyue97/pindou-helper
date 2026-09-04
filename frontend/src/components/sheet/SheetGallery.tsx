@@ -44,7 +44,7 @@ export default function SheetGallery({ sheets }: { sheets: Sheet[] }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { show } = useToast();
-  const gridRef = useRef<HTMLUListElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   /** 拖动中的临时顺序。null = 没在拖，直接用服务端给的顺序。 */
   const [order, setOrder] = useState<number[] | null>(null);
@@ -197,15 +197,23 @@ export default function SheetGallery({ sheets }: { sheets: Sheet[] }) {
   }
 
   if (sheets.length === 0) return null;
+  // 两类分开列。识别来的和照片转的**能做的事不一样**（后者不逐格改色），混在一起
+  // 光看缩略图分不出来——点进去才发现界面不一样，比多一个小标题烦人得多。
+  // 认不出来的一律当识别——老记录（加 kind 之前存的）没有这个字段。
+  const kindOf = (s: Sheet) => (s.kind === 'generate' ? 'generate' : 'recognise');
+  const groups = [
+    { kind: 'recognise' as const, title: '识别的图纸' },
+    { kind: 'generate' as const, title: '图片转的图纸' },
+  ].filter((g) => shown.some((s) => kindOf(s) === g.kind));
+
   return (
     <section className="sheet-gallery">
       <h3>我的图纸</h3>
       <p className="muted">点开继续；按住可以拖动排序。</p>
       {/* biome-ignore lint/a11y/useKeyboardEvents: 卡片里有真的按钮和链接走键盘，
           这一层只是叠加的拖动手势 */}
-      <ul
+      <div
         ref={gridRef}
-        className="sheet-grid"
         onPointerDown={(e) => onPointerDown(e)}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -218,7 +226,13 @@ export default function SheetGallery({ sheets }: { sheets: Sheet[] }) {
           }
         }}
       >
-        {shown.map((s) => (
+        {groups.map((g) => (
+          <div key={g.kind} className="sheet-group">
+            {/* 只有两类都有的时候才需要小标题——只有一类时它是废话 */}
+            {groups.length > 1 && <h4>{g.title}</h4>}
+            <ul className="sheet-grid">
+              {shown.filter((s) => kindOf(s) === g.kind).map((s) => (
+
           <li
             key={s.id}
             data-sheet-id={s.id}
@@ -311,8 +325,11 @@ export default function SheetGallery({ sheets }: { sheets: Sheet[] }) {
               </div>
             )}
           </li>
+              ))}
+            </ul>
+          </div>
         ))}
-      </ul>
+      </div>
     </section>
   );
 }

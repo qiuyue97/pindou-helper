@@ -23,7 +23,7 @@ vi.mock('react-router-dom', async () => {
 
 function sheet(over: Partial<Sheet> = {}): Sheet {
   return {
-    id: 1, name: '', position: 0, status: 'done',
+    id: 1, kind: 'recognise', name: '', position: 0, status: 'done',
     width: 100, height: 100, rect: [0, 0, 20, 20], rows: 65, cols: 65,
     has_blanks: false, palette: '221', snap_x: [], snap_y: [],
     labels: [], classes: [], counts: [], overrides: {}, prior: {},
@@ -187,4 +187,42 @@ it('触摸起手先放掉隐式捕获，否则拖过的卡片一张都认不出�
   const release = vi.spyOn(grip, 'releasePointerCapture');
   fireEvent.pointerDown(grip, { pointerId: 9, pointerType: 'touch' });
   expect(release).toHaveBeenCalledWith(9);
+});
+
+
+// ---------- 两类分开列 ----------
+//
+// 识别来的和照片转的**能做的事不一样**（后者不逐格改色），混在一起光看缩略图
+// 分不出来——点进去才发现界面不一样，比多一个小标题烦人得多。
+
+it('两类都有时各列一组', () => {
+  show([sheet({ id: 1 }), sheet({ id: 2, kind: 'generate' })]);
+  expect(screen.getByText('识别的图纸')).toBeInTheDocument();
+  expect(screen.getByText('图片转的图纸')).toBeInTheDocument();
+});
+
+it('只有一类时不显示小标题——那是废话', () => {
+  show([sheet({ id: 1 }), sheet({ id: 2 })]);
+  expect(screen.queryByText('识别的图纸')).toBeNull();
+  expect(screen.queryByText('图片转的图纸')).toBeNull();
+});
+
+it('卡片分进各自那一组', () => {
+  const { container } = show([
+    sheet({ id: 1, name: '识别来的' }),
+    sheet({ id: 2, kind: 'generate', name: '转出来的' }),
+  ]);
+  const groups = container.querySelectorAll('.sheet-group');
+  expect(groups).toHaveLength(2);
+  expect(groups[0]!).toHaveTextContent('识别来的');
+  expect(groups[0]!).not.toHaveTextContent('转出来的');
+  expect(groups[1]!).toHaveTextContent('转出来的');
+});
+
+it('老记录没有 kind 时当识别处理，不会凭空消失', () => {
+  const legacy = { ...sheet({ id: 5, name: '老图' }) } as Sheet;
+  // biome-ignore lint/performance/noDelete: 就是要模拟字段不存在
+  delete (legacy as { kind?: unknown }).kind;
+  show([legacy]);
+  expect(screen.getByText('老图')).toBeInTheDocument();
 });

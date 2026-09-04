@@ -43,6 +43,7 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
     "sheets": {
         "name": "VARCHAR(80) NOT NULL DEFAULT ''",
         "position": "INTEGER NOT NULL DEFAULT 0",
+        "kind": "VARCHAR(10) NOT NULL DEFAULT 'recognise'",
         "step": "VARCHAR(64) NOT NULL DEFAULT ''",
         "progress": "INTEGER NOT NULL DEFAULT 0",
     },

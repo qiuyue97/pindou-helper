@@ -6,22 +6,22 @@ import { useToast } from '../../state/ToastContext';
 /**
  * 一次只收一张图：角点拖拽的界面天然是单图。
  *
- * 「上传图纸」和「生成图纸」共用这一个：两边差的只是标题、说明，以及**要不要跑
- * 点阵检测**——照片上没有点阵可找，白跑一趟还会给出一个莫名其妙的初始框。
+ * 「上传图纸」和「生成图纸」共用这一个：两边差的只是标题、说明，和一个 `kind`
+ * ——它同时决定要不要跑点阵检测（照片上没有点阵可找），以及这张图纸此后归哪一类。
  */
 export default function SheetUpload({
   onUploaded,
   id = 'sheet-file',
   title = '上传图纸',
   hint = '一次一张。支持生成器导出的规整图片；手机拍的照片暂不支持。',
-  detect = true,
+  kind = 'recognise',
 }: {
   onUploaded: (g: SheetGuess) => void;
   id?: string;
   title?: string;
   hint?: string;
-  /** false = 跳过点阵检测。生成图纸走这条。 */
-  detect?: boolean;
+  /** 走哪条路。generate 会跳过点阵检测——照片上没有点阵可找。 */
+  kind?: 'recognise' | 'generate';
 }) {
   const { show } = useToast();
   const [busy, setBusy] = useState(false);
@@ -32,7 +32,7 @@ export default function SheetUpload({
     try {
       const form = new FormData();
       form.append('file', file);
-      form.append('detect', String(detect));
+      form.append('kind', kind);
       onUploaded(await apiUpload<SheetGuess>('/api/sheets', form));
     } catch (e) {
       show(e instanceof Error ? e.message : '上传失败');
