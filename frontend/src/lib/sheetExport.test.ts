@@ -5,6 +5,7 @@
  * 网格线和标尺各画多少条，底部汇总有几项。这些正是「用户能不能照着拼」的全部依据。
  */
 import { describe, expect, it, vi } from 'vitest';
+import { BLANK_CODE } from './sheetSort';
 import {
   type ExportCell,
   type LegendEntry,
@@ -15,6 +16,7 @@ import {
   drawSheet,
   inkOn,
   layout,
+  sheetToDrawing,
 } from './sheetExport';
 
 function cells(codes: (string | null)[]): ExportCell[] {
@@ -434,5 +436,60 @@ describe('drawRingOverlay', () => {
     const { ctx } = ring({ scrollY: 99999 });
     expect(ctx.texts).toHaveLength(0);
     expect(ctx.fillRect).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * 两种空格必须画成同一个样子。
+ *
+ * 「人工标成空白」和「检测出来就是空的」是同一回事——后端的 matrix._code() 早就
+ * 把它们并成空串了。前端漏了这一步的话，人工标的那些会被当成一个叫「-」的色号：
+ * 色卡里查不到就退回灰色，格子里还印个 `-`，旁边检测出来的空格却是一片留白透出
+ * 背景斜纹，同一张图上两种空格长得完全不一样。
+ */
+describe('sheetToDrawing', () => {
+  const HEX: Record<string, string> = { H15: '00FF00', B8: '0000FF' };
+  const draw = (over: Record<string, string>) =>
+    sheetToDrawing(
+      {
+        rows: 1,
+        cols: 3,
+        labels: [0, 1, -1],
+        classes: [
+          { klass: 0, code: 'H15' },
+          { klass: 1, code: 'B8' },
+        ],
+        overrides: over,
+        tally: { H15: 1, B8: 1 },
+      },
+      (c) => HEX[c],
+      (a, b) => a.localeCompare(b),
+    );
+
+  it('人工标成空白的格子和检测出来的空格一模一样', () => {
+    const { cells } = draw({ '0,1': BLANK_CODE });
+    expect(cells[1]).toEqual(cells[2]); // 人工标的 == 检测出来的
+    expect(cells[1]!.code).toBe('');
+  });
+
+  it('整类改成空白也一样——classes 里也可能存着这个记号', () => {
+    const d = sheetToDrawing(
+      {
+        rows: 1,
+        cols: 2,
+        labels: [0, -1],
+        classes: [{ klass: 0, code: BLANK_CODE }],
+        overrides: {},
+        tally: {},
+      },
+      (c) => HEX[c],
+      (a, b) => a.localeCompare(b),
+    );
+    expect(d.cells[0]).toEqual(d.cells[1]);
+  });
+
+  it('别的色号照常', () => {
+    const { cells } = draw({ '0,0': 'B8' });
+    expect(cells[0]).toEqual({ code: 'B8', hex: '0000FF' });
   });
 });

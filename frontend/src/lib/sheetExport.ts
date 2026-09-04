@@ -8,6 +8,8 @@
  * 全在前端画。服务端不产出任何图片：矩阵、色卡、数量前端全都有，画一遍就行。
  */
 
+import { BLANK_CODE } from './sheetSort';
+
 export interface ExportCell {
   /** 空串 = 空格，不画 */
   code: string;
@@ -458,7 +460,12 @@ export function sheetToDrawing(
     for (let c = 0; c < sheet.cols; c += 1) {
       const over = sheet.overrides[`${r},${c}`];
       const k = sheet.labels[r * sheet.cols + c];
-      const code = over ?? (k !== undefined && k >= 0 ? codeOf.get(k) : undefined);
+      const raw = over ?? (k !== undefined && k >= 0 ? codeOf.get(k) : undefined);
+      // BLANK_CODE 是**存法**不是色号，画之前先归一成空串——和后端 matrix._code()
+      // 同一步。少了它，人工标成空白的格子会被当成一个叫「-」的色号：色卡里查不到
+      // 就退回灰色，还在格子里印一个 `-`，和检测出来的空格（一片留白，透出背景
+      // 斜纹）长得完全不一样。两种空格本来就是同一回事，得画成同一个样子。
+      const code = raw === BLANK_CODE ? undefined : raw;
       cells.push({
         code: code ?? '',
         hex: code ? (hexOf(code) ?? 'CCCCCC') : 'CCCCCC',
