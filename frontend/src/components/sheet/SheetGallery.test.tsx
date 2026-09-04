@@ -61,8 +61,27 @@ it('一张都没有时整块不显示', () => {
 it('缩略图走 /thumb，不是几 MB 的原图', () => {
   const { container } = show([sheet({ id: 7 })]);
   const img = container.querySelector('img.sheet-thumb') as HTMLImageElement;
-  expect(img.getAttribute('src')).toBe('/api/sheets/7/thumb');
+  expect(img.getAttribute('src')).toContain('/api/sheets/7/thumb');
   expect(img.getAttribute('loading')).toBe('lazy'); // 一屏十几张，别一次全拉
+});
+
+it('URL 带缓存记号：删掉一张再传一张会重用 id，光靠 id 会端出旧缩略图', () => {
+  const { container, rerender } = show([
+    sheet({ id: 7, created_at: '2026-09-04T01:05:03Z' }),
+  ]);
+  const first = container.querySelector('img.sheet-thumb')!.getAttribute('src');
+
+  // 同一个 id，另一张图纸（原来那张被删了，新传的捡到了 17 号）
+  rerender(
+    <QueryClientProvider client={new QueryClient()}>
+      <ToastProvider>
+        <MemoryRouter>
+          <SheetGallery sheets={[sheet({ id: 7, created_at: '2026-09-04T16:20:00Z' })]} />
+        </MemoryRouter>
+      </ToastProvider>
+    </QueryClientProvider>,
+  );
+  expect(container.querySelector('img.sheet-thumb')!.getAttribute('src')).not.toBe(first);
 });
 
 it('没起名字的显示 #id，起过名字的显示名字', () => {

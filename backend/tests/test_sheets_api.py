@@ -271,3 +271,37 @@ def test_a_missing_original_gives_a_404_thumbnail_not_a_500(vip, grid_png):
         rel = session.get(Sheet, sid).image
     os.remove(os.path.join(get_settings().upload_dir, rel))
     assert vip.get(f"/api/sheets/{sid}/thumb").status_code == 404
+
+
+# ------------------------------------------------------------- id 会被重用 --
+
+
+def test_sqlite_reuses_the_id_of_the_sheet_you_just_deleted(vip, grid_png):
+    """删掉最后一张再传一张，新的那张会**拿到同一个 id**。
+
+    id 是 SQLite 的 rowid，没加 AUTOINCREMENT，删掉最大的那行就把号腾出来了。
+    于是新旧两张图纸的缩略图 URL 一模一样（/api/sheets/17/thumb），而那个响应带着
+    一天的强缓存——浏览器压根不会再来问一次，用户在「我的图纸」里看到的还是被删掉
+    那张的缩略图。
+
+    这条钉住的是**前提**：只要 id 还会重用，按 id 拼出来的图片 URL 就必须带上
+    一个能区分两张图纸的记号（前端用 created_at）。
+    """
+    first = _upload(vip, grid_png).json()["id"]
+    second = _upload(vip, grid_png).json()["id"]
+    assert second == first + 1
+
+    vip.delete(f"/api/sheets/{second}", headers=XRW)
+    again = _upload(vip, grid_png).json()["id"]
+    assert again == second, "id 没被重用的话这条就该删掉，缓存那个坑也不存在了"
+
+
+def test_two_sheets_sharing_an_id_differ_by_created_at(vip, grid_png):
+    """前端拿 created_at 当缓存记号，所以它必须真的能区分开这两张。"""
+    sid = _upload(vip, grid_png).json()["id"]
+    before = vip.get(f"/api/sheets/{sid}").json()["created_at"]
+    vip.delete(f"/api/sheets/{sid}", headers=XRW)
+    again = _upload(vip, grid_png).json()["id"]
+    after = vip.get(f"/api/sheets/{again}").json()["created_at"]
+    assert again == sid
+    assert after != before

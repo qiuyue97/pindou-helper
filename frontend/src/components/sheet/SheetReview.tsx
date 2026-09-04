@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CountRow, Sheet } from '../../api/types';
 import { type Rect, cellRect } from '../../lib/sheetGeometry';
+import { imageUrl } from '../../lib/sheetImage';
 import { BLANK_CODE, groupByCode } from '../../lib/sheetSort';
 import CodeSheet from './CodeSheet';
 
@@ -318,6 +319,9 @@ function CellPane({
   // 原图取不到（卷被清过、记录还在）时要说出来。之前是静静地留一块空白画布，
   // 用户只能看到「共 N 个豆点」下面什么都没有，完全不知道发生了什么。
   const [gone, setGone] = useState(false);
+  // 依赖是那个 **URL 字符串**，不是 sheet 对象：每改一次色号 sheet 都会换一个新
+  // 对象，挂在它上面的话每次改动都要重新下载几 MB 的原图，而加载窗口里画布是空的。
+  const src = imageUrl(sheet);
   useEffect(() => {
     let alive = true;
     const im = new Image();
@@ -327,11 +331,11 @@ function CellPane({
     im.onerror = () => {
       if (alive) setGone(true);
     };
-    im.src = `/api/sheets/${sheet.id}/image`;
+    im.src = src;
     return () => {
       alive = false;
     };
-  }, [sheet.id]);
+  }, [src]);
 
   useEffect(() => {
     const canvas = ref.current;

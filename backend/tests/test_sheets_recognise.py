@@ -251,10 +251,33 @@ def test_a_failed_run_clears_the_progress(vip, uploaded, monkeypatch):  # noqa: 
     assert d["step"] == ""
 
 
-def test_progress_resets_when_recognising_again(vip, uploaded):  # noqa: F811
+def test_progress_resets_when_recognising_again(vip, uploaded, monkeypatch):  # noqa: F811
+    """重新识别要把上一次的 100% 清掉。
+
+    **把线程按在半路上再断言**，不能跑完一次就直接读——离线那条路快得很，后台线程
+    常常在断言之前就又跑完了，于是读到的是新的 100 而不是重置后的 0，测试时红时绿。
+    """
+    import threading
+
+    from app.routers import sheets as mod
+
     sid, s = uploaded
     vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
-    _wait(vip, sid)
+    assert _wait(vip, sid)["progress"] == 100
+
+    gate = threading.Event()
+    real = mod.pipeline.analyse
+
+    def held(*a, **kw):
+        gate.wait(10)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(mod.pipeline, "analyse", held)
     vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
-    d = vip.get(f"/api/sheets/{sid}").json()
-    assert d["progress"] < 100      # 不能还挂着上一次的 100
+    try:
+        d = vip.get(f"/api/sheets/{sid}").json()
+        assert d["progress"] < 100      # 不能还挂着上一次的 100
+        assert d["status"] in ("pending", "running")
+    finally:
+        gate.set()
+    _wait(vip, sid)

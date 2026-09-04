@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiSend } from '../../api/client';
 import type { Sheet } from '../../api/types';
 import { moveTo } from '../../lib/reorder';
+import { thumbUrl } from '../../lib/sheetImage';
 import { useToast } from '../../state/ToastContext';
 
 const STATUS_TEXT: Record<Sheet['status'], string> = {
@@ -30,7 +31,8 @@ const MOUSE_SLOP = 5;
  * 所以这里以缩略图为主，名字、状态、尺寸都退成注脚。
  *
  * 缩略图走 `/thumb` 不走 `/image`：原图是几 MB 的生成器导出，一次十几张，手机上
- * 光下载就得半天。
+ * 光下载就得半天。URL 上那个 `?v=` 不是装饰——SQLite 会重用删掉的 id，光按 id 拼
+ * URL 的话「删一张再传一张」会让浏览器把旧缩略图端上来。见 lib/sheetImage.ts。
  *
  * 每行几个由**可用宽度**决定（auto-fill + minmax），不写死断点：这一页在手机上
  * 是两列，平板三四列，桌面六列，都是同一条规则算出来的。
@@ -246,7 +248,7 @@ export default function SheetGallery({ sheets }: { sheets: Sheet[] }) {
             >
               <img
                 className="sheet-thumb"
-                src={`/api/sheets/${s.id}/thumb`}
+                src={thumbUrl(s)}
                 alt=""
                 loading="lazy"
                 draggable={false}
