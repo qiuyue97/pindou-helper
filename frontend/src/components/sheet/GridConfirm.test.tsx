@@ -91,16 +91,23 @@ it('确认时把几何交出去', () => {
     rect: [40, 40, 340, 260],
     rows: 22,
     cols: 30,
-    has_blanks: false,
+    has_blanks: true,
     palette: '221',
   });
 });
 
-it('「有空格子」是用户勾的，不是猜的', () => {
+it('「有空格子」默认勾上——漏勾的代价是满图错，多勾一眼看得出来', () => {
+  const onConfirm = setup();
+  expect(screen.getByLabelText(/有空格子/)).toBeChecked();
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0].has_blanks).toBe(true);
+});
+
+it('铺满的图纸可以取消勾选', () => {
   const onConfirm = setup();
   fireEvent.click(screen.getByLabelText(/有空格子/));
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
-  expect(onConfirm.mock.calls[0]![0].has_blanks).toBe(true);
+  expect(onConfirm.mock.calls[0]![0].has_blanks).toBe(false);
 });
 
 it('色卡默认 221，可以切到 291', () => {

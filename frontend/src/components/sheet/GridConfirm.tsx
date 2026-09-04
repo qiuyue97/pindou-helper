@@ -72,7 +72,10 @@ export default function GridConfirm({
   const [rect, setRect] = useState<Rect>(guess.rect as Rect);
   const [rows, setRows] = useState(guess.rows);
   const [cols, setCols] = useState(guess.cols);
-  const [blanks, setBlanks] = useState(false);
+  // 默认**勾上**。绝大多数图纸都有空格（图案很少铺满整个矩形），漏勾的代价是
+  // 每一个空格都会被硬配一个色号——满图错，而且错得不显眼；多勾的代价只是白色
+  // 豆子可能被当成空格，用户一眼看得出来，右边改几格就完事。
+  const [blanks, setBlanks] = useState(true);
   const [palette, setPalette] = useState<CandidateSet>('221');
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [gone, setGone] = useState(false);
