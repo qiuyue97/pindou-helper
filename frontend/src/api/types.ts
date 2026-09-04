@@ -229,6 +229,10 @@ export interface CountRow {
 
 export interface Sheet {
   id: number;
+  /** 用户起的名字。空 = 没起过，列表里显示 #id。 */
+  name: string;
+  /** 列表里的排序位。小的在前，同位按 id 倒序。 */
+  position: number;
   status: 'pending' | 'ready' | 'running' | 'done' | 'failed';
   width: number;
   height: number;

@@ -122,6 +122,16 @@ class Sheet(Base):
     #: ready = 检测完了等用户确认几何；done 包含「什么都没读出来」这种正常产出
     status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
 
+    #: 用户给这张图纸起的名字。空 = 没起过，列表里显示 #id。
+    #: 起名是给人看的，不参与任何计算，所以随便改、随便空。
+    name: Mapped[str] = mapped_column(String(80), default="")
+    #: 列表里的排序位。小的在前；同位按 id 倒序（新的在前）。
+    #:
+    #: 默认 0 意味着**没排过序的一律并列第一**，于是自然退化成「按 id 倒序」
+    #: ——正好是加这个字段之前的行为。排过一次之后位置就是 0..n-1，新传的图纸
+    #: 仍然是 0，和当时的第一名并列，靠 id 更大排在它前面，照样落在最上面。
+    position: Mapped[int] = mapped_column(Integer, default=0, index=True)
+
     #: 原图相对路径，落在持久卷上。前端裁格子和画网格都取它。
     image: Mapped[str] = mapped_column(String(255), default="")
     width: Mapped[int] = mapped_column(Integer, default=0)

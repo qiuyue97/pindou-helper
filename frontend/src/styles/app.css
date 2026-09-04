@@ -150,9 +150,49 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 .opactions button { padding: 0.25rem 0.55rem; font-size: 0.85rem; }
 .tag { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 999px; background: #eee; color: var(--muted); }
 
+/* 手机上的顶栏。三条硬要求，都是被 iOS 上那张截图逼出来的：
+     1. 五个选项卡**一行放完**，不换行；
+     2. 每个卡里的字**不折行**（原来「图纸识别」被折成「图纸识 / 别」，
+        整条卡片跟着变高，一排卡片高矮不齐）；
+     3. 「早上好/用户名/退出」允许掉到下一行，但要靠**右**。
+   做法是把字和图标一起缩小、把内边距压到最小，而不是让它换行。真到了小于 340
+   的屏幕上，nowrap + overflow-x 兜底：宁可横向滑一下，也不让它变形。 */
 @media (max-width: 640px) {
-  .topbar { gap: 0.5rem; }
-  .topbar-right { width: 100%; margin-left: 0; }
+  .topbar { gap: 0.4rem 0.5rem; }
+  .topbar h1 { font-size: 1rem; }
+  .topbar nav {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .topbar nav::-webkit-scrollbar { display: none; }
+  .topbar nav a {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 0.78rem;
+    padding: 0.3rem 0.32rem;
+    gap: 0.2rem;
+  }
+  .topbar nav a svg { width: 14px; height: 14px; }
+  /* 掉到下一行，靠右 */
+  .topbar-right {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    gap: 0.4rem;
+  }
+  .greeting, .username { font-size: 0.8rem; }
+  .topbar-right button { padding: 0.25rem 0.4rem; font-size: 0.8rem; }
+}
+
+/* 更窄的机器（iPhone SE 一档）再降一档，仍然一行放得下 */
+@media (max-width: 380px) {
+  .topbar nav a { font-size: 0.72rem; padding: 0.28rem 0.22rem; gap: 0.15rem; }
+  .topbar nav a svg { width: 13px; height: 13px; }
 }
 
 .sample { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
@@ -337,14 +377,9 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   background: var(--lv);
 }
 
-/* 结果页比 .app 的 1100 宽一些（图纸格子够看），上下两块（预览、豆号操作）
-   共用这一个宽度并居中。left/transform 是为了冲破 .app 的 max-width。 */
-.sheet-page {
-  width: min(1360px, 94vw);
-  position: relative;
-  left: 50%;
-  transform: translateX(-50%);
-}
+/* 图纸页**和其它页一样宽**。它一度冲破 .app 的 1100 去撑到 1360，图是大了，
+   代价是全站只有这一页比别处宽出一截，切过来一眼就看得出错位。宽度一致更重要
+   ——预览本来就能滚轮/双指放大，看细节不靠页面宽。 */
 .sheet-page > * + * {
   margin-top: 16px;
 }
@@ -652,22 +687,159 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   }
 }
 
-/* 最近的图纸：切走再回来靠它找回未完成的任务。 */
-.sheet-resume h3 {
-  margin: 16px 0 6px;
+/* 最近的图纸：缩略图墙。切走再回来靠它找回未完成的任务，也靠它认出哪张是哪张
+   ——十张 65×65 的行列数一模一样，光靠 id 和日期分不出来。
+   每行几个由可用宽度定（auto-fill + minmax），不写死断点。 */
+.sheet-gallery h3 {
+  margin: 18px 0 2px;
   font-size: 0.95rem;
 }
-.sheet-resume ul {
+.sheet-gallery > .muted {
+  display: block;
+  margin: 0 0 10px;
+}
+.sheet-grid {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  /* 132 是量出来的：iPhone SE 那一档（320 宽，减掉 .app 的 16 边距）刚好还能
+     并两列。放到 150 就掉成一列，一张缩略图占满整个屏宽，翻起来没完。 */
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
 }
-.sheet-resume li {
+.sheet-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  /* 拖起来的那张跟着手走，别让浏览器再去做文字选中/长按菜单 */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.sheet-card.dragging {
+  opacity: 0.75;
+  border-color: var(--accent);
+  box-shadow: 0 4px 14px rgba(28, 28, 26, 0.18);
+}
+/* 缩略图那块整个是打开按钮：卡片上最大的目标就该是最常做的事 */
+.sheet-card-open {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: repeating-linear-gradient(45deg, #f7f7f4 0 6px, #fff 6px 12px);
+}
+.sheet-card-open:hover:not(:disabled) {
+  background: repeating-linear-gradient(45deg, #f2f2ee 0 6px, #fafaf7 6px 12px);
+  border-color: transparent;
+}
+.sheet-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  pointer-events: none; /* 拖动时命中的应该是卡片，不是这张图 */
+}
+/* 把手：确定能拖的那条路。它自己 touch-action: none，按住就走，不用等长按。 */
+.sheet-card-grip {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+}
+.sheet-card-body {
+  display: grid;
+  gap: 2px;
+  padding: 6px 8px 4px;
+  min-width: 0;
+}
+.sheet-card-name {
+  font-size: 0.85rem;
+  /* 名字可以很长，卡片不能跟着变宽——省略号，完整的挂在 title 上 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sheet-name-input {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.sheet-card-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sheet-status {
+  font-size: 0.72rem;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #eee;
+  color: var(--muted);
+}
+.sheet-status.s-done {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sheet-status.s-ready {
+  background: #fdf1de;
+  color: var(--warn);
+}
+.sheet-status.s-failed {
+  background: #fbe6e3;
+  color: var(--danger);
+}
+.sheet-card time {
+  font-size: 0.75rem;
+}
+.sheet-card-actions,
+.sheet-card-confirm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 6px;
+}
+.sheet-card-actions {
+  justify-content: flex-end;
+}
+.sheet-card-actions button {
+  padding: 3px 6px;
+}
+.sheet-card-confirm {
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+}
+.sheet-card-confirm button {
+  padding: 2px 6px;
+  font-size: 0.78rem;
+}
+button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+button.danger:hover:not(:disabled) {
+  background: #fbe6e3;
+  border-color: var(--danger);
 }
 
 /* 「空白格」不是色号，色块用斜杠底纹表示「这里没有豆子」。 */

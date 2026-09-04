@@ -32,6 +32,8 @@ vi.mock('../state/useEffectiveCatalog', () => ({
 function sheet(over: Partial<Sheet> = {}): Sheet {
   return {
     id: 1,
+    name: '',
+    position: 0,
     status: 'done',
     width: 100,
     height: 100,
@@ -212,7 +214,9 @@ it('上传界面列出最近的图纸，点一下回到它', async () => {
   });
   show();
   expect(await screen.findByText('最近的图纸')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /#7 49×48/ })).toBeInTheDocument();
+  // 现在是缩略图墙：打开按钮包着缩略图，名字/尺寸/状态在下面
+  expect(screen.getByRole('button', { name: '打开 #7' })).toBeInTheDocument();
+  expect(screen.getByText('49×48')).toBeInTheDocument();
   expect(screen.getByText('识别中')).toBeInTheDocument();
 });
 

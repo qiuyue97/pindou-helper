@@ -153,3 +153,121 @@ def test_a_missing_original_is_a_404_not_a_500(vip, grid_png):
         rel = session.get(Sheet, sid).image
     os.remove(os.path.join(get_settings().upload_dir, rel))
     assert vip.get(f"/api/sheets/{sid}/image").status_code == 404
+
+
+# ------------------------------------------------------- 命名 / 排序 / 缩略图 --
+
+
+def test_a_new_sheet_has_no_name(vip, grid_png):
+    """没起名字就是空串，前端据此显示 #id。"""
+    sid = _upload(vip, grid_png).json()["id"]
+    assert vip.get(f"/api/sheets/{sid}").json()["name"] == ""
+
+
+def test_naming_a_sheet_sticks(vip, grid_png):
+    sid = _upload(vip, grid_png).json()["id"]
+    r = vip.patch(f"/api/sheets/{sid}/name", json={"name": "  小熊  "}, headers=XRW)
+    assert r.status_code == 200
+    assert r.json()["name"] == "小熊"          # 两头的空格掐掉
+    assert vip.get("/api/sheets").json()["sheets"][0]["name"] == "小熊"
+
+
+def test_an_empty_name_clears_it(vip, grid_png):
+    """取消命名要能做到——回到 #id，不是留一个空白标题。"""
+    sid = _upload(vip, grid_png).json()["id"]
+    vip.patch(f"/api/sheets/{sid}/name", json={"name": "小熊"}, headers=XRW)
+    r = vip.patch(f"/api/sheets/{sid}/name", json={"name": ""}, headers=XRW)
+    assert r.json()["name"] == ""
+
+
+def test_naming_someone_elses_sheet_is_a_404(vip, grid_png):
+    sid = _upload(vip, grid_png).json()["id"]
+    vip.post("/api/auth/logout", headers=XRW)
+    vip.post("/api/auth/register",
+             json={"username": "other2", "password": "password123"}, headers=XRW)
+    _set_vip("other2")
+    r = vip.patch(f"/api/sheets/{sid}/name", json={"name": "抢过来"}, headers=XRW)
+    assert r.status_code == 404
+
+
+def test_without_reordering_the_newest_is_first(vip, grid_png):
+    """加了 position 之后，没排过序的行为必须和以前**一模一样**。"""
+    a = _upload(vip, grid_png).json()["id"]
+    b = _upload(vip, grid_png).json()["id"]
+    assert [s["id"] for s in vip.get("/api/sheets").json()["sheets"]] == [b, a]
+
+
+def test_reordering_sticks(vip, grid_png):
+    a = _upload(vip, grid_png).json()["id"]
+    b = _upload(vip, grid_png).json()["id"]
+    c = _upload(vip, grid_png).json()["id"]
+    r = vip.put("/api/sheets/order", json={"ids": [a, c, b]}, headers=XRW)
+    assert r.status_code == 204
+    assert [s["id"] for s in vip.get("/api/sheets").json()["sheets"]] == [a, c, b]
+
+
+def test_a_sheet_uploaded_after_reordering_goes_on_top(vip, grid_png):
+    """排过序之后新传的图纸不能沉到底下——用户刚传完就是要接着弄它。"""
+    a = _upload(vip, grid_png).json()["id"]
+    b = _upload(vip, grid_png).json()["id"]
+    vip.put("/api/sheets/order", json={"ids": [a, b]}, headers=XRW)
+    c = _upload(vip, grid_png).json()["id"]
+    assert vip.get("/api/sheets").json()["sheets"][0]["id"] == c
+
+
+def test_reordering_ignores_ids_that_are_not_yours(vip, grid_png):
+    """别人的 id 混进来直接跳过，而不是报错——也不该真的改到别人的东西。"""
+    mine = _upload(vip, grid_png).json()["id"]
+    vip.post("/api/auth/logout", headers=XRW)
+    vip.post("/api/auth/register",
+             json={"username": "other3", "password": "password123"}, headers=XRW)
+    _set_vip("other3")
+    theirs = _upload(vip, grid_png).json()["id"]
+
+    vip.post("/api/auth/logout", headers=XRW)
+    vip.post("/api/auth/login",
+             json={"username": "vip", "password": "password123"}, headers=XRW)
+    r = vip.put("/api/sheets/order", json={"ids": [theirs, mine]}, headers=XRW)
+    assert r.status_code == 204
+    assert [s["id"] for s in vip.get("/api/sheets").json()["sheets"]] == [mine]
+
+
+def test_the_thumbnail_is_small(vip, grid_png):
+    """列表里一次十几张，不能让它去下载几 MB 的原图。"""
+    sid = _upload(vip, grid_png).json()["id"]
+    r = vip.get(f"/api/sheets/{sid}/thumb")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/jpeg"
+    im = Image.open(io.BytesIO(r.content))
+    assert max(im.size) <= 400
+    assert len(r.content) < len(grid_png)
+
+
+def test_the_thumbnail_is_cacheable(vip, grid_png):
+    """图片上传之后不会再变，所以可以让浏览器留着——否则每次进列表都要重解一遍。"""
+    sid = _upload(vip, grid_png).json()["id"]
+    r = vip.get(f"/api/sheets/{sid}/thumb")
+    assert "max-age" in r.headers.get("cache-control", "")
+
+
+def test_another_users_thumbnail_is_a_404(vip, grid_png):
+    sid = _upload(vip, grid_png).json()["id"]
+    vip.post("/api/auth/logout", headers=XRW)
+    vip.post("/api/auth/register",
+             json={"username": "other4", "password": "password123"}, headers=XRW)
+    _set_vip("other4")
+    assert vip.get(f"/api/sheets/{sid}/thumb").status_code == 404
+
+
+def test_a_missing_original_gives_a_404_thumbnail_not_a_500(vip, grid_png):
+    import os
+
+    from app.config import get_settings
+    from app.db import get_sessionmaker
+    from app.models import Sheet
+
+    sid = _upload(vip, grid_png).json()["id"]
+    with get_sessionmaker()() as session:
+        rel = session.get(Sheet, sid).image
+    os.remove(os.path.join(get_settings().upload_dir, rel))
+    assert vip.get(f"/api/sheets/{sid}/thumb").status_code == 404

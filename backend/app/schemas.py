@@ -295,6 +295,10 @@ class SheetGuessOut(BaseModel):
 
 class SheetOut(BaseModel):
     id: int
+    #: 用户起的名字。空 = 没起过，前端显示 #id。
+    name: str = ""
+    #: 列表里的排序位。小的在前，同位按 id 倒序。
+    position: int = 0
     status: str
     width: int
     height: int
@@ -324,6 +328,22 @@ class SheetOut(BaseModel):
 class SheetSummary(BaseModel):
     sheets: list[SheetOut] = []
     running: int = 0
+
+
+class SheetNameIn(BaseModel):
+    """给图纸起名字。空字符串 = 取消命名，回到 #id。"""
+
+    name: str = Field(default="", max_length=80)
+
+
+class SheetOrderIn(BaseModel):
+    """整份列表的新顺序。
+
+    传的是**用户屏幕上那一份完整列表**，服务端按下标写回 position。只传被挪动的
+    那一张是不够的：位置是相对的，两张图的先后关系没法从一条记录里读出来。
+    """
+
+    ids: list[int] = Field(min_length=1, max_length=200)
 
 
 class RecogniseIn(BaseModel):

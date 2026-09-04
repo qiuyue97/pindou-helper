@@ -8,6 +8,7 @@
 路由只认 `app.sheet.pipeline`，不直接碰 cv2 / sklearn。
 """
 
+import io
 import logging
 import os
 import threading
@@ -15,8 +16,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -35,6 +37,8 @@ from app.schemas import (
     RecodeIn,
     RecogniseIn,
     SheetGuessOut,
+    SheetNameIn,
+    SheetOrderIn,
     SheetOut,
     SheetSummary,
 )
@@ -81,7 +85,8 @@ def _semaphore(settings: Settings) -> threading.Semaphore:
 
 def _row(s: Sheet) -> SheetOut:
     return SheetOut(
-        id=s.id, status=s.status, width=s.width, height=s.height,
+        id=s.id, name=s.name or "", position=s.position,
+        status=s.status, width=s.width, height=s.height,
         rect=s.rect or [], rows=s.rows, cols=s.cols, has_blanks=s.has_blanks,
         palette=s.palette, snap_x=s.snap_x or [], snap_y=s.snap_y or [],
         labels=s.labels or [], classes=s.classes or [], counts=s.counts or [],
@@ -298,9 +303,11 @@ def get_sheet(sheet_id: int, user: User = Depends(require_vip),
 @router.get("/sheets", response_model=SheetSummary)
 def list_sheets(user: User = Depends(require_vip),
                 session: Session = Depends(get_session)) -> SheetSummary:
+    # position 小的在前，同位按 id 倒序。没排过序的一律 position=0，于是自然退化
+    # 成「新的在前」——正好是加排序之前的行为，老用户看不出变化。
     rows = session.scalars(
         select(Sheet).where(Sheet.user_id == user.id)
-        .order_by(Sheet.id.desc()).limit(20)
+        .order_by(Sheet.position.asc(), Sheet.id.desc()).limit(60)
     ).all()
     return SheetSummary(
         sheets=[_row(s) for s in rows],
@@ -320,6 +327,74 @@ def delete_sheet(sheet_id: int, user: User = Depends(require_vip),
     session.delete(sheet)
     session.commit()
     return Response(status_code=204)
+
+
+@router.patch("/sheets/{sheet_id}/name", response_model=SheetOut)
+def patch_name(sheet_id: int, body: SheetNameIn,
+               user: User = Depends(require_vip),
+               session: Session = Depends(get_session)) -> SheetOut:
+    """给图纸起名字。空 = 取消命名，列表里回到 #id。"""
+    sheet = _own(sheet_id, user, session)
+    sheet.name = body.name.strip()
+    session.commit()
+    return _row(sheet)
+
+
+@router.put("/sheets/order", status_code=204)
+def reorder_sheets(body: SheetOrderIn = Body(...),
+                   user: User = Depends(require_vip),
+                   session: Session = Depends(get_session)) -> Response:
+    """按前端给的完整顺序写回 position。
+
+    只认**自己的**图纸：别人的 id 混进来会被直接忽略，而不是报错——前端没有理由
+    发得出来，真发出来了也不该让它改到别人的东西。
+    """
+    mine = {
+        s.id: s
+        for s in session.scalars(select(Sheet).where(Sheet.user_id == user.id)).all()
+    }
+    for i, sid in enumerate(body.ids):
+        row = mine.get(sid)
+        if row is not None:
+            row.position = i
+    session.commit()
+    return Response(status_code=204)
+
+
+#: 缩略图最长边。列表里一行放三四个，四百像素在高分屏上也够清楚。
+_THUMB_MAX = 400
+
+
+@router.get("/sheets/{sheet_id}/thumb")
+def get_sheet_thumb(
+    sheet_id: int,
+    user: User = Depends(require_vip),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> Response:
+    """列表里用的小图。
+
+    不能拿 `/image` 顶替：原图是几 MB 的生成器导出，列表里一次要显示十几张，手机
+    上光下载就得半天。这里现算现给——图片上传之后就不会再变，所以可以放心让浏览器
+    缓存住，实际只解一次。
+    """
+    sheet = _own(sheet_id, user, session)
+    try:
+        data = read_upload(settings.upload_dir, sheet.image)
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="图片已不存在") from None
+    try:
+        im = Image.open(io.BytesIO(data))
+        im.thumbnail((_THUMB_MAX, _THUMB_MAX))
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, format="JPEG", quality=78)
+    except Exception:  # noqa: BLE001 - 图坏了不该把整个列表带崩
+        raise HTTPException(status_code=404, detail="图片无法读取") from None
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 # ---------------------------------------------------------------- 三级编辑 --

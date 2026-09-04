@@ -40,6 +40,10 @@ _ADDED_COLUMNS: dict[str, dict[str, str]] = {
         "extracted": "BOOLEAN NOT NULL DEFAULT 1",
         "items": "JSON",
     },
+    "sheets": {
+        "name": "VARCHAR(80) NOT NULL DEFAULT ''",
+        "position": "INTEGER NOT NULL DEFAULT 0",
+    },
 }
 
 

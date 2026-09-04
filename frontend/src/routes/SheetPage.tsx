@@ -7,6 +7,7 @@ import type { Sheet, SheetGuess } from '../api/types';
 import BatchDialog from '../components/BatchDialog';
 import GridConfirm, { type Geometry } from '../components/sheet/GridConfirm';
 import SheetExport from '../components/sheet/SheetExport';
+import SheetGallery from '../components/sheet/SheetGallery';
 import SheetPreview from '../components/sheet/SheetPreview';
 import SheetReview from '../components/sheet/SheetReview';
 import SheetUpload from '../components/sheet/SheetUpload';
@@ -85,7 +86,7 @@ export default function SheetPage() {
               setGuess(g);
             }}
           />
-          <Resume sheets={recent?.sheets ?? []} />
+          <SheetGallery sheets={recent?.sheets ?? []} />
         </>
       )}
 
@@ -152,38 +153,6 @@ export default function SheetPage() {
         />
       )}
     </main>
-  );
-}
-
-const STATUS_TEXT: Record<Sheet['status'], string> = {
-  pending: '排队中',
-  running: '识别中',
-  ready: '等待确认网格',
-  done: '已完成',
-  failed: '失败',
-};
-
-/** 最近的图纸，点一下回到它。 */
-function Resume({ sheets }: { sheets: Sheet[] }) {
-  const navigate = useNavigate();
-  if (sheets.length === 0) return null;
-  return (
-    <div className="sheet-resume">
-      <h3>最近的图纸</h3>
-      <ul>
-        {sheets.map((s) => (
-          <li key={s.id}>
-            <button type="button" className="linklike" onClick={() => navigate(`/sheet/${s.id}`)}>
-              #{s.id} {s.rows}×{s.cols}
-            </button>
-            <span className={`muted level-${s.status === 'failed' ? 'guess' : 'ok'}`}>
-              {STATUS_TEXT[s.status]}
-            </span>
-            <span className="muted">{new Date(s.created_at).toLocaleString()}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
