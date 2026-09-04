@@ -125,9 +125,58 @@ it('改行列数会带进确认结果', () => {
   expect(onConfirm.mock.calls[0]![0].rows).toBe(49);
 });
 
-it('画布上禁掉浏览器的触摸手势，否则拖角会变成滚页面', () => {
+it('画布把竖向划动让给页面滚动，角点命中块自己扣下来', () => {
+  // none 的话手机上一根手指怎么划都是平移图片，取景框又占满整个宽度、高 70vh，
+  // 页面就滚不下去了，下面的行列数和「开始识别」够不着。
   setup();
-  expect(screen.getByLabelText('网格范围').style.touchAction).toBe('none');
+  expect(screen.getByLabelText('网格范围').style.touchAction).toBe('pan-y');
+  // 拖角点不能被页面滚动抢走，所以命中块那一小块是 none（写在 .grid-corner 上）
+  expect(screen.getByLabelText('左上角点')).toHaveClass('grid-corner');
+});
+
+it('四个角各有一块命中块，从它起手就是拖角，不用再判半径', () => {
+  const onConfirm = setup({ snap_x: [], snap_y: [] });
+  expect(screen.getByLabelText('右下角点')).toBeInTheDocument();
+  const grip = screen.getByLabelText('左上角点');
+  fireEvent.pointerDown(grip, { clientX: 40, clientY: 40, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerMove(grip, { clientX: 70, clientY: 70, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerUp(grip, { pointerId: 1 });
+  fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
+  expect(onConfirm.mock.calls[0]![0].rect.slice(0, 2)).toEqual([70, 70]);
+});
+
+// ---------- 放大镜 ----------
+
+it('拖角点时出来放大镜，松手收起——手指正压在要对准的那个点上', async () => {
+  setup();
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+  expect(screen.queryByLabelText('放大镜')).toBeNull();
+
+  fireEvent.pointerDown(canvas, { clientX: 40, clientY: 40, pointerId: 1 });
+  expect(screen.getByLabelText('放大镜')).toBeInTheDocument();
+  fireEvent.pointerUp(canvas, { pointerId: 1 });
+  expect(screen.queryByLabelText('放大镜')).toBeNull();
+});
+
+it('放大镜躲开手指所在的那个象限', () => {
+  setup();
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  // 左上角 (40,40) 在取景框左上象限 -> 放大镜贴右下
+  fireEvent.pointerDown(canvas, { clientX: 40, clientY: 40, pointerId: 1 });
+  const loupe = screen.getByLabelText('放大镜');
+  expect(loupe.style.bottom).toBe('8px');
+  expect(loupe.style.right).toBe('8px');
+});
+
+it('平移不出放大镜——没在对准什么', () => {
+  setup();
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  fireEvent.pointerDown(canvas, { clientX: 200, clientY: 150, pointerId: 1 });
+  expect(screen.queryByLabelText('放大镜')).toBeNull();
 });
 
 it('拖一个角会吸附到真实分隔线上', () => {
@@ -322,6 +371,24 @@ it('第二根手指落下时不会顺手把角点拖走', async () => {
   fireEvent.click(screen.getByRole('button', { name: '开始识别' }));
 
   expect(onConfirm.mock.calls[0]![0].rect).toEqual([40, 40, 340, 260]);
+});
+
+it('双指拖动平移图片——一根手指竖着划已经让给页面滚动了', async () => {
+  setup();
+  const canvas = screen.getByLabelText('网格范围');
+  sizeCanvas(canvas);
+  await waitFor(() => expect(ctx.drawImage).toHaveBeenCalled());
+
+  // 两指横着排开，一起往下挪 30：间距先变大再变回来，净缩放正好是 1
+  fireEvent.pointerDown(canvas, { clientX: 180, clientY: 150, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerDown(canvas, { clientX: 220, clientY: 150, pointerId: 2, pointerType: 'touch' });
+  fireEvent.pointerMove(canvas, { clientX: 180, clientY: 180, pointerId: 1, pointerType: 'touch' });
+  fireEvent.pointerMove(canvas, { clientX: 220, clientY: 180, pointerId: 2, pointerType: 'touch' });
+
+  const calls = ctx.drawImage.mock.calls;
+  const last = calls[calls.length - 1]!;
+  expect(Number(last[3])).toBe(400); // 没缩放
+  expect(Number(last[2])).toBe(30); // 图往下挪了 30
 });
 
 it('空白处拖动是平移，不动框', async () => {

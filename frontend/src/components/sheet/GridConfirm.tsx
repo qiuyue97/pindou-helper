@@ -14,6 +14,9 @@ import {
   fitView,
   gridCount,
   hitCorner,
+  LOUPE_CELLS,
+  loupeAnchor,
+  loupeSpan,
   moveCorner,
   pitchOf,
   snap,
@@ -32,6 +35,12 @@ export interface Geometry {
 
 /** 参考网格线画几条就够——104 条全画出来缩到屏幕上就是一片灰。 */
 const GUIDE_LINES = 20;
+
+/** 放大镜方框边长（CSS 像素）。 */
+const LOUPE = 132;
+
+/** 角点的读屏名字，顺序和 corners() 一致。 */
+const CORNER_NAME = ['左上', '右上', '右下', '左下'] as const;
 
 /**
  * 拖四个角把网格框对准，然后开始识别。
@@ -62,6 +71,7 @@ export default function GridConfirm({
 }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const loupeRef = useRef<HTMLCanvasElement>(null);
   // 框可以超出图片边界，**不夹**。实测过一张 3492x3791 的图：检测给出的框从
   // -22 到 3514，格距 52.00 干干净净，每一格的中心都还落在图内，图片最外圈 12px
   // 是纯白边距——那 22px 就是最外一圈的半格留白，框是对的。夹回去会把格距压成
@@ -81,6 +91,8 @@ export default function GridConfirm({
   const [gone, setGone] = useState(false);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ scale: 1, ox: 0, oy: 0 });
+  /** 正在拖的那个角在原图上的位置。null = 没在拖，放大镜收起来。 */
+  const [loupe, setLoupe] = useState<[number, number] | null>(null);
   /** 整张图刚好放下时的倍率。缩放上下限都相对它，用户永远缩不到比「适应」更小。 */
   const base = fitView(guess.width, guess.height, box.w, box.h).scale;
 
@@ -205,58 +217,155 @@ export default function GridConfirm({
     }
   }, [img, rect, rows, cols, view, box.w, box.h, guess.width, guess.height]);
 
-  /** 屏幕坐标（CSS 像素，相对取景框左上角）。 */
-  function local(e: { clientX: number; clientY: number }, el: HTMLElement): [number, number] {
-    const b = el.getBoundingClientRect();
-    return [e.clientX - b.left, e.clientY - b.top];
+  // 放大镜。只在拖角点的时候画，松手就清空。
+  //
+  // 画的是**原图**的一小块，不是把取景框那张缩过的图再放大——取景框里一格才几个
+  // 像素，放大它只会得到一块马赛克。imageSmoothingEnabled 关掉，要的就是看清
+  // 像素边界落在哪。中间的十字就是框的那两条边，两侧的浅线是按格距往外推的下一
+  // 条格线：格距对不对得上，一眼就看出来。
+  useEffect(() => {
+    const cv = loupeRef.current;
+    const ctx = cv?.getContext('2d');
+    if (!cv || !ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = Math.max(1, Math.round(LOUPE * dpr));
+    cv.height = Math.max(1, Math.round(LOUPE * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, LOUPE, LOUPE);
+    if (!loupe || !img) return;
+
+    const span = loupeSpan(pitchX, pitchY);
+    const k = LOUPE / span;
+    const [ix, iy] = loupe;
+    ctx.fillStyle = '#f2f3f5';
+    ctx.fillRect(0, 0, LOUPE, LOUPE);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, ix - span / 2, iy - span / 2, span, span, 0, 0, LOUPE, LOUPE);
+
+    const mid = LOUPE / 2;
+    if (pitchX > 0 && pitchY > 0) {
+      ctx.strokeStyle = 'rgba(46,160,67,0.4)';
+      ctx.lineWidth = 1;
+      for (let n = -LOUPE_CELLS; n <= LOUPE_CELLS; n += 1) {
+        if (n === 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(mid + n * pitchX * k, 0);
+        ctx.lineTo(mid + n * pitchX * k, LOUPE);
+        ctx.moveTo(0, mid + n * pitchY * k);
+        ctx.lineTo(LOUPE, mid + n * pitchY * k);
+        ctx.stroke();
+      }
+    }
+
+    // 框的那两条边：白衬 + 绿线，和主画布同一套，图纸花起来也找得着
+    for (const [color, w] of [
+      ['rgba(255,255,255,0.9)', 4],
+      ['#2ea043', 2],
+    ] as const) {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = w;
+      ctx.beginPath();
+      ctx.moveTo(mid, 0);
+      ctx.lineTo(mid, LOUPE);
+      ctx.moveTo(0, mid);
+      ctx.lineTo(LOUPE, mid);
+      ctx.stroke();
+    }
+  }, [loupe, img, pitchX, pitchY]);
+
+  /**
+   * 屏幕坐标（CSS 像素，相对取景框左上角）。
+   *
+   * 一律按**取景框**算，不按事件落在哪个元素算：角点命中块和画布铺的是同一块
+   * 地方，两条路必须是同一套坐标，否则从命中块起手的拖动会整体偏掉。
+   */
+  function local(e: { clientX: number; clientY: number }): [number, number] {
+    const b = (boxRef.current ?? canvasRef.current)?.getBoundingClientRect();
+    return [e.clientX - (b?.left ?? 0), e.clientY - (b?.top ?? 0)];
   }
 
-  // --- 指针：一根手指拖角或平移，两根捏合缩放 ---
-
+  // --- 指针：一根手指拖角或平移，两根捏合缩放 + 平移 ---
+  //
+  // 画布原来是 touch-action: none，手机上一根手指怎么划都是平移图片。取景框又占
+  // 满整个宽度、高 70vh，于是**页面根本滚不下去**，下面的行列数和「开始识别」够
+  // 不着（用户报的「手机端不好下滑」）。
+  //
+  // 现在画布是 pan-y：竖着划让给页面滚动，横着划还是平移图片。拖角点不受影响
+  // ——四个角上各盖了一块 touch-action: none 的命中块，手指落在那上面浏览器就
+  // 不抢了。竖向平移图片改走**双指拖动**（和捏合同一套手势，顺手）。
   const pointers = useRef(new Map<number, [number, number]>());
   const drag = useRef<Corner | null>(null);
   const pan = useRef<[number, number] | null>(null);
   const pinch = useRef<number | null>(null);
+  /** 上一帧两指的中点，双指平移靠它算位移。 */
+  const pinchMid = useRef<[number, number] | null>(null);
 
-  function onDown(e: React.PointerEvent<HTMLCanvasElement>) {
-    const p = local(e, e.currentTarget);
+  function startPinch() {
+    drag.current = null;
+    pan.current = null;
+    setLoupe(null);
+    const [a, b] = [...pointers.current.values()];
+    pinch.current = Math.hypot(a![0] - b![0], a![1] - b![1]);
+    pinchMid.current = [(a![0] + b![0]) / 2, (a![1] + b![1]) / 2];
+  }
+
+  function grabCorner(c: Corner) {
+    drag.current = c;
+    pan.current = null;
+    setLoupe(corners(rect)[c]!);
+  }
+
+  /** `corner` 非空 = 按在角点命中块上，不用再判半径。 */
+  function onDown(e: React.PointerEvent, corner: Corner | null = null) {
+    const p = local(e);
     pointers.current.set(e.pointerId, p);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
 
     if (pointers.current.size === 2) {
       // 第二根手指落下：停掉拖角/平移，进入捏合
-      drag.current = null;
-      pan.current = null;
-      const [a, b] = [...pointers.current.values()];
-      pinch.current = Math.hypot(a![0] - b![0], a![1] - b![1]);
+      startPinch();
       return;
     }
 
-    // 命中判定直接在屏幕空间做，半径就是手指/鼠标的精度，不用再换算
+    if (corner !== null) {
+      grabCorner(corner);
+      return;
+    }
+
+    // 命中判定直接在屏幕空间做，半径就是手指/鼠标的精度，不用再换算。命中块只有
+    // 三四十像素，这一层让鼠标不必非得点中那个小圆。
     const [sx0, sy0] = toScreen(rect[0], rect[1], view);
     const [sx1, sy1] = toScreen(rect[2], rect[3], view);
     const radius = e.pointerType === 'touch' ? HIT_TOUCH : HIT_MOUSE;
-    const corner = hitCorner([sx0, sy0, sx1, sy1], p[0], p[1], radius);
-    if (corner === null) pan.current = p;
-    else drag.current = corner;
+    const c = hitCorner([sx0, sy0, sx1, sy1], p[0], p[1], radius);
+    if (c === null) pan.current = p;
+    else grabCorner(c);
   }
 
-  function onMove(e: React.PointerEvent<HTMLCanvasElement>) {
+  function onMove(e: React.PointerEvent) {
     if (!pointers.current.has(e.pointerId)) return;
-    const p = local(e, e.currentTarget);
+    const p = local(e);
     const prev = pointers.current.get(e.pointerId)!;
     pointers.current.set(e.pointerId, p);
 
     if (pointers.current.size >= 2 && pinch.current !== null) {
       const [a, b] = [...pointers.current.values()];
       const d = Math.hypot(a![0] - b![0], a![1] - b![1]);
+      const mx = (a![0] + b![0]) / 2;
+      const my = (a![1] + b![1]) / 2;
       const from = pinch.current;
-      if (d > 0 && from > 0) {
-        const mx = (a![0] + b![0]) / 2;
-        const my = (a![1] + b![1]) / 2;
-        setView((v) => zoomAt(v, mx, my, d / from, base * ZOOM_MIN, base * ZOOM_MAX));
-      }
+      const was = pinchMid.current;
+      setView((v) => {
+        let next = v;
+        if (d > 0 && from > 0) {
+          next = zoomAt(next, mx, my, d / from, base * ZOOM_MIN, base * ZOOM_MAX);
+        }
+        // 双指平移。一根手指竖着划已经让给页面滚动了，图片的竖向平移落在这里。
+        if (was) next = { ...next, ox: next.ox + mx - was[0], oy: next.oy + my - was[1] };
+        return next;
+      });
       pinch.current = d;
+      pinchMid.current = [mx, my];
       return;
     }
 
@@ -266,7 +375,10 @@ export default function GridConfirm({
       // 否则缩到很小时一碰就吸，放大之后又完全吸不上
       const tol = SNAP_TOL / (view.scale || 1);
       const corner = drag.current;
-      setRect((r) => moveCorner(r, corner, snap(ix, guess.snap_x, tol), snap(iy, guess.snap_y, tol)));
+      const nx = snap(ix, guess.snap_x, tol);
+      const ny = snap(iy, guess.snap_y, tol);
+      setRect((r) => moveCorner(r, corner, nx, ny));
+      setLoupe([nx, ny]);
       return;
     }
 
@@ -275,12 +387,16 @@ export default function GridConfirm({
     }
   }
 
-  function onUp(e: React.PointerEvent<HTMLCanvasElement>) {
+  function onUp(e: React.PointerEvent) {
     pointers.current.delete(e.pointerId);
-    e.currentTarget.releasePointerCapture?.(e.pointerId);
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
     drag.current = null;
     pan.current = null;
-    if (pointers.current.size < 2) pinch.current = null;
+    setLoupe(null);
+    if (pointers.current.size < 2) {
+      pinch.current = null;
+      pinchMid.current = null;
+    }
   }
 
   // 滚轮缩放。React 的 onWheel 挂的是被动监听，preventDefault 无效（页面会跟着
@@ -297,8 +413,25 @@ export default function GridConfirm({
         zoomAt(v, px, py, Math.exp(-e.deltaY / 400), base * ZOOM_MIN, base * ZOOM_MAX),
       );
     };
+    // 画布是 pan-y，标准实现下双指已经归我们了；iOS Safari 不认 touch-action 的
+    // pinch 部分，照样会去缩整个页面，所以多指的 touch 事件和 Safari 私有的
+    // gesture 事件再挡一道。
+    const onMultiTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1) e.preventDefault();
+    };
+    const onGesture = (e: Event) => e.preventDefault();
     canvas.addEventListener('wheel', onWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', onWheel);
+    canvas.addEventListener('touchstart', onMultiTouch, { passive: false });
+    canvas.addEventListener('touchmove', onMultiTouch, { passive: false });
+    canvas.addEventListener('gesturestart', onGesture);
+    canvas.addEventListener('gesturechange', onGesture);
+    return () => {
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onMultiTouch);
+      canvas.removeEventListener('touchmove', onMultiTouch);
+      canvas.removeEventListener('gesturestart', onGesture);
+      canvas.removeEventListener('gesturechange', onGesture);
+    };
   }, [base]);
 
   function zoomBy(factor: number) {
@@ -306,6 +439,14 @@ export default function GridConfirm({
   }
 
   const ready = rows > 0 && cols > 0;
+
+  // 放大镜贴在躲开手指的那个角上。自己被手挡住的放大镜没有意义。
+  const loupePos = (() => {
+    if (!loupe) return undefined;
+    const [sx, sy] = toScreen(loupe[0], loupe[1], view);
+    const [v, h] = loupeAnchor(sx, sy, box.w, box.h);
+    return { [v]: 8, [h]: 8 } as React.CSSProperties;
+  })();
 
   return (
     <div className="grid-confirm">
@@ -319,13 +460,39 @@ export default function GridConfirm({
         <canvas
           ref={canvasRef}
           aria-label="网格范围"
-          // 不加 touchAction，手指一拖就变成滚页面而不是拖角/平移
-          style={{ touchAction: 'none', width: '100%', height: '100%' }}
+          // pan-y：竖着划让给页面滚动（手机上不这样页面就滚不下去），横着划还是
+          // 平移图片。拖角点走下面那四块 touch-action: none 的命中块。
+          style={{ touchAction: 'pan-y', width: '100%', height: '100%' }}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerCancel={onUp}
         />
+        {/* 角点命中块。看不见——绿圆点是画布画的，这里只是一块手指够得着、
+            又不会被浏览器抢去滚页面的地方。 */}
+        {corners(rect).map(([ix, iy], i) => {
+          const [cx, cy] = toScreen(ix, iy, view);
+          return (
+            <span
+              key={CORNER_NAME[i]}
+              className="grid-corner"
+              aria-label={`${CORNER_NAME[i]}角点`}
+              style={{ left: cx, top: cy }}
+              onPointerDown={(e) => onDown(e, i as Corner)}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+            />
+          );
+        })}
+        {loupe && (
+          <canvas
+            ref={loupeRef}
+            className="grid-loupe"
+            aria-label="放大镜"
+            style={{ width: LOUPE, height: LOUPE, ...loupePos }}
+          />
+        )}
       </div>
 
       <div className="grid-confirm-zoom">

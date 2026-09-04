@@ -154,3 +154,34 @@ export function pitchOf(rect: Rect, rows: number, cols: number): [number, number
     rows > 0 ? (rect[3] - rect[1]) / rows : 0,
   ];
 }
+
+// --- 放大镜 ---
+//
+// 拖角点时手指正好压在要对准的那个点上，什么都看不见；鼠标好一点，但整张图缩到
+// 取景框里之后一格才几个像素，也谈不上「对准」。放大镜把角点周围单独放大画一遍。
+
+/** 放大镜里看几格。三格：中间那条边，两边各留一格判断格距对不对得上。 */
+export const LOUPE_CELLS = 3;
+/** 检测失败时没有格距，给个保底的窗口（图像像素）。 */
+const LOUPE_FALLBACK = 60;
+
+/** 放大镜取多大一块原图（图像像素，方形）。 */
+export function loupeSpan(pitchX: number, pitchY: number): number {
+  const p = Math.max(pitchX, pitchY);
+  return p > 0 ? p * LOUPE_CELLS : LOUPE_FALLBACK;
+}
+
+/**
+ * 放大镜贴取景框的哪个角。
+ *
+ * 永远躲开手指所在的那个象限——放大镜的全部意义就是看手指底下那一点，自己被手
+ * 挡住就白搭了。
+ */
+export function loupeAnchor(
+  sx: number,
+  sy: number,
+  w: number,
+  h: number,
+): ['top' | 'bottom', 'left' | 'right'] {
+  return [sy < h / 2 ? 'bottom' : 'top', sx < w / 2 ? 'right' : 'left'];
+}

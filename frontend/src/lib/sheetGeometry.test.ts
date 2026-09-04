@@ -13,6 +13,9 @@ import {
   HIT_MOUSE,
   HIT_TOUCH,
   hitCorner,
+  LOUPE_CELLS,
+  loupeAnchor,
+  loupeSpan,
   moveCorner,
   pitchOf,
   snap,
@@ -203,5 +206,26 @@ describe('gridCount', () => {
   it('算不出来就说算不出来，不瞎猜', () => {
     expect(gridCount(500, 0)).toBe(0);
     expect(gridCount(0, 52)).toBe(0);
+  });
+});
+
+describe('放大镜', () => {
+  it('有格距就看三格——中间那条边，两边各留一格判断格距对不对得上', () => {
+    expect(loupeSpan(52, 52)).toBe(52 * LOUPE_CELLS);
+  });
+
+  it('横竖格距不一样时按大的来，两个方向都装得下', () => {
+    expect(loupeSpan(30, 52)).toBe(52 * LOUPE_CELLS);
+  });
+
+  it('检测失败没有格距时给个保底窗口，不至于除零或者放大到一片马赛克', () => {
+    expect(loupeSpan(0, 0)).toBeGreaterThan(0);
+  });
+
+  it('永远贴在手指所在象限的对角——自己被手挡住的放大镜没有意义', () => {
+    expect(loupeAnchor(10, 10, 400, 300)).toEqual(['bottom', 'right']);
+    expect(loupeAnchor(390, 10, 400, 300)).toEqual(['bottom', 'left']);
+    expect(loupeAnchor(10, 290, 400, 300)).toEqual(['top', 'right']);
+    expect(loupeAnchor(390, 290, 400, 300)).toEqual(['top', 'left']);
   });
 });

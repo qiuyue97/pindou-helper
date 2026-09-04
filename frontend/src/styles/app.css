@@ -369,7 +369,11 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
 
 /* 固定大小的取景框，图片缩放平移都发生在它里面。给一个中性底色，图没铺满时
    一眼看得出边界在哪。 */
+/* 取景框。touch-action 是 pan-y 不是 none：手机上它占满整个宽度、高 70vh，
+   none 的话一根手指怎么划都是平移图片，页面就滚不下去了，下面的行列数和
+   「开始识别」够不着。竖着划让给页面，拖角点交给上面那四块命中块。 */
 .grid-confirm-stage {
+  position: relative;
   width: 100%;
   height: 70vh;
   min-height: 320px;
@@ -377,7 +381,41 @@ th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--line); text-alig
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 6px;
   overflow: hidden;
+  touch-action: pan-y;
+}
+/* 窄屏上取景框矮一点，识别参数不用滑太久才够得着 */
+@media (max-width: 720px) {
+  .grid-confirm-stage {
+    height: 52vh;
+  }
+}
+/* 角点命中块：透明，绿圆点是画布画的。它存在只为两件事——给手指一块够大的
+   目标，以及用 touch-action: none 把这一小块从页面滚动里抠出来。 */
+.grid-corner {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  border-radius: 50%;
   touch-action: none;
+  cursor: grab;
+}
+@media (pointer: coarse) {
+  /* 手指没有像素精度，命中块给到 HIT_TOUCH 那么大 */
+  .grid-corner {
+    width: 44px;
+    height: 44px;
+    margin: -22px 0 0 -22px;
+  }
+}
+/* 放大镜：拖角点时才出现，贴在躲开手指的那个角上（位置在组件里算）。 */
+.grid-loupe {
+  position: absolute;
+  display: block;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
 }
 
 .grid-confirm-zoom {
