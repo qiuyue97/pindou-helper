@@ -265,7 +265,7 @@ export function drawSheet(
   // --- 网格线 ---
   //
   // 逐格那一层**格子太小就不画**：手机上 1 倍是三个像素一格，一条 1 像素的线要
-  // 吃掉小半格，满屏细线比豆子本身还显眼（用户原话「图片看着很花」）。每 10 格
+  // 吃掉小半格，满屏细线比豆子本身还显眼（用户原话「图片看着很花」）。每 5 格
   // 那条粗线照画——它间距够大，是这时候唯一还立得住的定位线。
   if (cell >= MIN_GRID_CELL) {
     ctx.strokeStyle = 'rgba(0,0,0,0.28)';
@@ -285,17 +285,17 @@ export function drawSheet(
       ctx.stroke();
     }
   }
-  // 每 10 格加粗一条，照着数的时候不容易串行
+  // 每 5 格加粗一条，照着数的时候不容易串行
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 2;
-  for (let c = 0; c <= cols; c += 10) {
+  for (let c = 0; c <= cols; c += 5) {
     const x = pad + c * cell;
     ctx.beginPath();
     ctx.moveTo(x, pad);
     ctx.lineTo(x, pad + gridH);
     ctx.stroke();
   }
-  for (let r = 0; r <= rows; r += 10) {
+  for (let r = 0; r <= rows; r += 5) {
     const y = pad + r * cell;
     ctx.beginPath();
     ctx.moveTo(pad, y);
@@ -308,8 +308,8 @@ export function drawSheet(
   // 只有这一圈。之前中间还有一圈每 5 格一标的粗刻度，和逐格圈挨在一起又挤又乱，
   // 去掉了——逐格圈本身就够定位，还能一格一格对着拼。
   //
-  // 上降序、下升序、左降序、右升序 —— 于是**最大的数落在左上和右下**这两个对角。
-  // 数格子的时候从哪一边起手都有一个满格基准，不必每次从 1 数到 104。
+  // 从左上角起，列号向右递增、行号向下递增；上下列号一致、左右行号一致。
+  // 同一格从任何一边读到的都是同一个行列号。
   //
   // 预览把这一圈关掉了（layout 的 ring: false），改用 drawRingOverlay 贴在取景框
   // 边上——画在图里的圈一放大就跟着滚出视野，正好在最需要坐标的时候没了。
@@ -319,12 +319,12 @@ export function drawSheet(
     ctx.textAlign = 'center';
     for (let c = 0; c < cols; c += 1) {
       const x = pad + c * cell;
-      ringCell(ctx, x, pad - ring, cell, ring, String(cols - c)); // 上：降序
+      ringCell(ctx, x, pad - ring, cell, ring, String(c + 1)); // 上：升序
       ringCell(ctx, x, pad + gridH, cell, ring, String(c + 1)); // 下：升序
     }
     for (let r = 0; r < rows; r += 1) {
       const y = pad + r * cell;
-      ringCell(ctx, pad - ring, y, ring, cell, String(rows - r)); // 左：降序
+      ringCell(ctx, pad - ring, y, ring, cell, String(r + 1)); // 左：升序
       ringCell(ctx, pad + gridW, y, ring, cell, String(r + 1)); // 右：升序
     }
   }
@@ -384,8 +384,8 @@ export interface RingView {
  *   - 格子小到印不下每一格时**跳着标**（step），间距始终 ≥ RING_MIN_GAP。手机上
  *     一格三四个像素，逐格标只会糊成一条灰线。
  *
- * 上降序、下升序、左降序、右升序 —— 和导出的那一圈同一套规则，最大的数落在
- * 左上和右下两个对角。
+ * 和导出的那一圈同一套规则：从左上角起，列号向右递增、行号向下递增，
+ * 上下列号一致、左右行号一致。
  */
 export function drawRingOverlay(ctx: CanvasRenderingContext2D, v: RingView): void {
   const { rows, cols, cell, scrollX, scrollY, viewW, viewH, ring } = v;
@@ -423,13 +423,13 @@ export function drawRingOverlay(ctx: CanvasRenderingContext2D, v: RingView): voi
   for (let c = 0; c < cols; c += step) {
     const x = ring + c * cell + cell / 2 - scrollX;
     if (x < x0 || x > x1) continue;
-    ctx.fillText(String(cols - c), x, y0 - ring / 2); // 上：降序
+    ctx.fillText(String(c + 1), x, y0 - ring / 2); // 上：升序
     ctx.fillText(String(c + 1), x, y1 + ring / 2); // 下：升序
   }
   for (let r = 0; r < rows; r += step) {
     const y = ring + r * cell + cell / 2 - scrollY;
     if (y < y0 || y > y1) continue;
-    ctx.fillText(String(rows - r), x0 - ring / 2, y); // 左：降序
+    ctx.fillText(String(r + 1), x0 - ring / 2, y); // 左：升序
     ctx.fillText(String(r + 1), x1 + ring / 2, y); // 右：升序
   }
 }

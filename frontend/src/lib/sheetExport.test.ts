@@ -212,20 +212,32 @@ describe('drawSheet', () => {
 
   it('画出完整的网格线', () => {
     const { ctx } = draw(3, 4, Array(12).fill('H15'));
-    // 竖线 cols+1、横线 rows+1，再加每 10 格的加粗线（这里各 1 条）。
+    // 竖线 cols+1、横线 rows+1，再加每 5 格的加粗线（这里各 1 条）。
     // 背景斜纹也在 stroke，按画笔颜色把它排除掉。
     const grid = ctx.strokes.filter((c) => !c.startsWith('rgba(0,0,0,0.0'));
     expect(grid).toHaveLength(4 + 1 + 3 + 1 + 1 + 1);
   });
 
-  it('格子小到逐格网格线比豆子还显眼时，只留每 10 格那条粗线', () => {
+  it('横竖框线都从左上角起，每 5 格加粗一条', () => {
+    const { ctx } = draw(12, 13, Array(156).fill(null), []);
+    const starts = vi.mocked(ctx.moveTo).mock.calls;
+    const thickStarts = ctx.strokes.flatMap((color, i) =>
+      color === 'rgba(0,0,0,0.55)' ? [starts[i]] : [],
+    );
+    expect(thickStarts).toEqual([
+      [32, 32], [192, 32], [352, 32],
+      [32, 32], [32, 192], [32, 352],
+    ]);
+  });
+
+  it('格子小到逐格网格线比豆子还显眼时，只留每 5 格那条粗线', () => {
     const ctx = ctxStub();
     const lay = layout(20, 20, 0, { cell: 3, ring: false });
     drawSheet(ctx, { rows: 20, cols: 20, cells: cells(Array(400).fill('H15')), legend: [], layout: lay });
     const grid = ctx.strokes.filter((c) => !c.startsWith('rgba(0,0,0,0.0'));
-    // 逐格线（0.28）一条不画，只剩每 10 格的粗线（0.55）：横竖各 3 条
+    // 逐格线（0.28）一条不画，只剩每 5 格的粗线（0.55）：横竖各 5 条
     expect(grid.filter((c) => c === 'rgba(0,0,0,0.28)')).toHaveLength(0);
-    expect(grid.filter((c) => c === 'rgba(0,0,0,0.55)')).toHaveLength(6);
+    expect(grid.filter((c) => c === 'rgba(0,0,0,0.55)')).toHaveLength(10);
   });
 
   it('先铺背景斜纹，格子画在它上面', () => {
@@ -246,19 +258,18 @@ describe('drawSheet', () => {
     expect(lastHatch).toBeLessThan(firstCell);
   });
 
-  it('最外一圈逐格标号，最大值落在左上和右下', () => {
+  it('导出四边从左上角逐格升序标号，上下列号一致、左右行号一致', () => {
     const { ctx, lay } = draw(6, 8, Array(48).fill('H15'));
-    // 上边降序：最左那格是 cols(8)；下边升序：最右那格是 cols(8)
-    // 左边降序：最上那格是 rows(6)；右边升序：最下那格是 rows(6)
-    const topLeftMost = ctx.texts
-      .filter((t) => t.y < lay.pad && t.x < lay.pad + lay.cell)
-      .map((t) => Number(t.text));
-    expect(topLeftMost).toContain(8);
-
-    const bottomRightMost = ctx.texts
-      .filter((t) => t.y > lay.pad + lay.gridH && t.x > lay.pad + lay.gridW - lay.cell)
-      .map((t) => Number(t.text));
-    expect(bottomRightMost).toContain(8);
+    const top = ctx.texts.filter((t) => t.y < lay.pad).map((t) => t.text);
+    const bottom = ctx.texts.filter((t) =>
+      t.y > lay.pad + lay.gridH && t.y < lay.legendTop,
+    ).map((t) => t.text);
+    const left = ctx.texts.filter((t) => t.x < lay.pad).map((t) => t.text);
+    const right = ctx.texts.filter((t) => t.x > lay.pad + lay.gridW).map((t) => t.text);
+    expect(top).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    expect(bottom).toEqual(top);
+    expect(left).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(right).toEqual(left);
   });
 
   it('外圈每一格都有号（100 列 -> 上下各 100 个），没有别的刻度', () => {
@@ -386,27 +397,25 @@ describe('drawRingOverlay', () => {
   const nums = (ctx: ReturnType<typeof ctxStub>) =>
     ctx.texts.map((t) => Number(t.text)).filter((n) => !Number.isNaN(n));
 
-  it('上降序、下升序、左降序、右升序——最大的数落在左上和右下', () => {
-    const { ctx } = ring();
-    // 上边最左那格是 cols，下边最右那格是 cols
+  it('预览四边从左上角升序标号，上下列号一致、左右行号一致', () => {
+    const { ctx } = ring({ rows: 6, cols: 8, cell: 40, viewW: 320, viewH: 240 });
     const top = ctx.texts.filter((t) => t.y < 22);
-    const bottom = ctx.texts.filter((t) => t.y > 422);
-    expect(Math.max(...top.map((t) => Number(t.text)))).toBe(30);
-    expect(top.reduce((a, b) => (a.x < b.x ? a : b)).text).toBe('30');
-    expect(bottom.reduce((a, b) => (a.x < b.x ? a : b)).text).toBe('1');
-    // 左边最上那格是 rows，右边最上那格是 1
+    const bottom = ctx.texts.filter((t) => t.y > 262);
     const left = ctx.texts.filter((t) => t.x < 22);
-    const right = ctx.texts.filter((t) => t.x > 622);
-    expect(left.reduce((a, b) => (a.y < b.y ? a : b)).text).toBe('20');
-    expect(right.reduce((a, b) => (a.y < b.y ? a : b)).text).toBe('1');
+    const right = ctx.texts.filter((t) => t.x > 342);
+    expect(top.map((t) => t.text)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    expect(bottom.map((t) => t.text)).toEqual(top.map((t) => t.text));
+    expect(left.map((t) => t.text)).toEqual(['1', '2', '3', '4', '5', '6']);
+    expect(right.map((t) => t.text)).toEqual(left.map((t) => t.text));
   });
 
   it('滚过去以后报的是**当前视野**里的列号，不是图纸开头那几列', () => {
     // 2 倍（cell 40），横向滚掉 400 -> 视野落在第 10..24 列
-    const { ctx } = ring({ cell: 40, scrollX: 400 });
+    const { ctx } = ring({ cell: 40, scrollX: 400, scrollY: 200 });
     const top = ctx.texts.filter((t) => t.y < 22).map((t) => Number(t.text));
-    expect(top).not.toContain(30); // 第 0 列已经滚出去了
-    expect(top).toContain(20); // 第 10 列（降序 30-10）就在左边
+    const left = ctx.texts.filter((t) => t.x < 22).map((t) => Number(t.text));
+    expect(top).toEqual([11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]);
+    expect(left).toEqual([6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
   });
 
   it('格子小到挤不下就跳着标，不糊成一条灰线', () => {
