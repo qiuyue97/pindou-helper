@@ -168,6 +168,12 @@ const DIM_LEGEND = 0.3;
  */
 const DIM_V = 0.9;
 const DIM_A = 0.1;
+/**
+ * 调淡格子里的色号印成这个透明度。还能照着读，但比选中那几格的满色字退后一截。
+ * 字色固定深色：调淡后的格子几乎是白底，按豆子本色选字色的话深豆会印出白字。
+ */
+const DIM_CODE_A = 0.3;
+const DIM_INK = '#111';
 
 export function dimHex(hex: string): string {
   const n = Number.parseInt(hex, 16);
@@ -251,22 +257,23 @@ export function drawSheet(
       ctx.fillStyle = `#${dim ? dimHex(it.hex) : it.hex}`;
       ctx.fillRect(x, y, cell, cell);
       ctx.globalAlpha = 1;
-      // 调淡的格子**不印色号**。每一格都印着字，满屏灰字比颜色本身更抢眼，
-      // 想找的那几格反而淹在里面。选中之后只有它们带字，一眼就找得到。
-      if (dim) continue;
       const font = codeFont(it.code, cell);
       if (!font) continue; // 格子太小，印出来只是一团糊
-      ctx.fillStyle = inkOn(it.hex);
+      // 调淡的格子也印色号，只是淡一档：对着拼的时候旁边几格是什么照样读得出，
+      // 选中那几格的满色字依旧最显眼。
+      ctx.globalAlpha = dim ? DIM_CODE_A : 1;
+      ctx.fillStyle = dim ? DIM_INK : inkOn(it.hex);
       ctx.font = `${font}px system-ui, sans-serif`;
       ctx.fillText(it.code, x + cell / 2, y + cell / 2);
+      ctx.globalAlpha = 1;
     }
   }
 
   // --- 网格线 ---
   //
   // 逐格那一层**格子太小就不画**：手机上 1 倍是三个像素一格，一条 1 像素的线要
-  // 吃掉小半格，满屏细线比豆子本身还显眼（用户原话「图片看着很花」）。每 5 格
-  // 那条粗线照画——它间距够大，是这时候唯一还立得住的定位线。
+  // 吃掉小半格，满屏细线比豆子本身还显眼（用户原话「图片看着很花」）。每 5 格、
+  // 每 10 格的粗线照画——它间距够大，是这时候唯一还立得住的定位线。
   if (cell >= MIN_GRID_CELL) {
     ctx.strokeStyle = 'rgba(0,0,0,0.28)';
     ctx.lineWidth = 1;
@@ -285,11 +292,15 @@ export function drawSheet(
       ctx.stroke();
     }
   }
-  // 每 5 格加粗一条，照着数的时候不容易串行
+  // 每 10 格一条粗实线、中间每 5 格一条粗虚线，照着数的时候不容易串行，
+  // 一眼也分得出是第几个 10。虚线的段长跟着格子走，缩略图和导出图是同一种节奏。
   ctx.strokeStyle = 'rgba(0,0,0,0.55)';
   ctx.lineWidth = 2;
+  const seg = Math.max(2, Math.round(cell / 3));
+  const majorDash = (i: number) => ctx.setLineDash(i % 10 === 0 ? [] : [seg, seg]);
   for (let c = 0; c <= cols; c += 5) {
     const x = pad + c * cell;
+    majorDash(c);
     ctx.beginPath();
     ctx.moveTo(x, pad);
     ctx.lineTo(x, pad + gridH);
@@ -297,11 +308,13 @@ export function drawSheet(
   }
   for (let r = 0; r <= rows; r += 5) {
     const y = pad + r * cell;
+    majorDash(r);
     ctx.beginPath();
     ctx.moveTo(pad, y);
     ctx.lineTo(pad + gridW, y);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 
   // --- 四边坐标：外圈**逐格**一个数字 ---
   //

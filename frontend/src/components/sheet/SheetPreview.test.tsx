@@ -92,9 +92,9 @@ it('选中一个色号，其余的压成灰', () => {
   fireEvent.click(screen.getByRole('button', { name: /H15/ }));
   expect(ctx.fillStyleLog).toContain('#00FF00');
   expect(ctx.fillStyleLog).toContain(`#${dimHex('0000FF')}`);
-  // 选中的那两格还印着色号，没选中的不印
+  // 选中的、没选中的都印着色号——没选中的只是淡一档，对着拼时旁边是什么照样读得出
   expect(texts()).toContain('H15');
-  expect(texts().filter((t) => t === 'B8')).toHaveLength(1); // 只剩底部汇总那一条
+  expect(texts().filter((t) => t === 'B8')).toHaveLength(3); // 两格 + 底部汇总那一条
 });
 
 it('再点一下取消，全部恢复', () => {

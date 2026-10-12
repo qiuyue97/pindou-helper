@@ -50,6 +50,8 @@ export function stubCanvas2D(): Ctx2DStub {
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     stroke: vi.fn(),
+    // 图纸每 5 格那条粗线是虚线
+    setLineDash: vi.fn(),
     arc: vi.fn(),
     fill: vi.fn(),
     // 图纸的完整渲染（格内色号、标尺、底部汇总）全靠这个

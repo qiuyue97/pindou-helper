@@ -24,11 +24,15 @@ function cells(codes: (string | null)[]): ExportCell[] {
 }
 
 function ctxStub() {
-  const texts: Array<{ text: string; x: number; y: number }> = [];
+  /** 印字那一刻的字色（fill）和透明度（alpha）也记下来。 */
+  const texts: Array<{ text: string; x: number; y: number; fill: string; alpha: number }> = [];
   const fills: string[] = [];
   /** 每次 stroke 时的画笔颜色。用来把背景斜纹和网格线分开数。 */
   const strokes: string[] = [];
   const alphas: number[] = [];
+  /** 每次 stroke 时的虚线设置。空数组 = 实线。 */
+  const dashes: number[][] = [];
+  let dash: number[] = [];
   const ctx = {
     fillRect: vi.fn(),
     strokeRect: vi.fn(),
@@ -36,13 +40,21 @@ function ctxStub() {
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
-    stroke: vi.fn(() => strokes.push(String(ctx.strokeStyle))),
+    stroke: vi.fn(() => {
+      strokes.push(String(ctx.strokeStyle));
+      dashes.push(dash);
+    }),
+    setLineDash: vi.fn((d: number[]) => {
+      dash = [...d];
+    }),
     // 背景斜纹要把自己裁在网格区域内
     save: vi.fn(),
     restore: vi.fn(),
     clip: vi.fn(),
     rect: vi.fn(),
-    fillText: vi.fn((text: string, x: number, y: number) => texts.push({ text, x, y })),
+    fillText: vi.fn((text: string, x: number, y: number) =>
+      texts.push({ text, x, y, fill: String(ctx.fillStyle), alpha: Number(ctx.globalAlpha) }),
+    ),
     font: '',
     textAlign: '',
     textBaseline: '',
@@ -52,11 +64,13 @@ function ctxStub() {
     fills,
     strokes,
     alphas,
+    dashes,
   } as unknown as CanvasRenderingContext2D & {
     texts: typeof texts;
     fills: string[];
     strokes: string[];
     alphas: number[];
+    dashes: number[][];
   };
   Object.defineProperty(ctx, 'globalAlpha', {
     get: () => alphas[alphas.length - 1] ?? 1,
@@ -218,16 +232,20 @@ describe('drawSheet', () => {
     expect(grid).toHaveLength(4 + 1 + 3 + 1 + 1 + 1);
   });
 
-  it('横竖框线都从左上角起，每 5 格加粗一条', () => {
+  it('从左上角起每 10 格一条粗实线，中间每 5 格一条粗虚线', () => {
     const { ctx } = draw(12, 13, Array(156).fill(null), []);
     const starts = vi.mocked(ctx.moveTo).mock.calls;
-    const thickStarts = ctx.strokes.flatMap((color, i) =>
-      color === 'rgba(0,0,0,0.55)' ? [starts[i]] : [],
+    const thick = ctx.strokes.flatMap((color, i) =>
+      color === 'rgba(0,0,0,0.55)' ? [{ at: starts[i], dashed: ctx.dashes[i]!.length > 0 }] : [],
     );
-    expect(thickStarts).toEqual([
-      [32, 32], [192, 32], [352, 32],
-      [32, 32], [32, 192], [32, 352],
+    expect(thick).toEqual([
+      { at: [32, 32], dashed: false }, { at: [192, 32], dashed: true }, { at: [352, 32], dashed: false },
+      { at: [32, 32], dashed: false }, { at: [32, 192], dashed: true }, { at: [32, 352], dashed: false },
     ]);
+    // 逐格细线永远是实线：虚线设置画完粗线要还原，不能漏到后面
+    const thin = ctx.strokes.flatMap((color, i) => (color === 'rgba(0,0,0,0.28)' ? [ctx.dashes[i]!] : []));
+    expect(thin.every((d) => d.length === 0)).toBe(true);
+    expect(vi.mocked(ctx.setLineDash).mock.calls.at(-1)).toEqual([[]]);
   });
 
   it('格子小到逐格网格线比豆子还显眼时，只留每 5 格那条粗线', () => {
@@ -235,7 +253,7 @@ describe('drawSheet', () => {
     const lay = layout(20, 20, 0, { cell: 3, ring: false });
     drawSheet(ctx, { rows: 20, cols: 20, cells: cells(Array(400).fill('H15')), legend: [], layout: lay });
     const grid = ctx.strokes.filter((c) => !c.startsWith('rgba(0,0,0,0.0'));
-    // 逐格线（0.28）一条不画，只剩每 5 格的粗线（0.55）：横竖各 5 条
+    // 逐格线（0.28）一条不画，只剩每 5 格的粗线（0.55，10 格实线 + 5 格虚线）：横竖各 5 条
     expect(grid.filter((c) => c === 'rgba(0,0,0,0.28)')).toHaveLength(0);
     expect(grid.filter((c) => c === 'rgba(0,0,0,0.55)')).toHaveLength(10);
   });
@@ -356,7 +374,7 @@ describe('drawSheet', () => {
     expect(ctx.alphas[ctx.alphas.length - 1]).toBe(1);
   });
 
-  it('没选中的格子不印色号——满屏灰字比颜色还抢眼', () => {
+  it('没选中的格子也印色号，只是用淡一档的深色字', () => {
     const ctx = ctxStub();
     const lay = layout(1, 2, 0, { cell: 32 });
     drawSheet(ctx, {
@@ -364,14 +382,21 @@ describe('drawSheet', () => {
       cols: 2,
       cells: [
         { code: 'A1', hex: 'FF0000' },
-        { code: 'B1', hex: '0000FF' },
+        { code: 'B1', hex: '000000' },
       ],
       legend: [],
       layout: lay,
       focus: new Set(['A1']),
     });
-    expect(ctx.texts.some((t) => t.text === 'A1')).toBe(true);
-    expect(ctx.texts.some((t) => t.text === 'B1')).toBe(false);
+    const a1 = ctx.texts.find((t) => t.text === 'A1')!;
+    const b1 = ctx.texts.find((t) => t.text === 'B1')!;
+    expect(a1.alpha).toBe(1);
+    expect(b1).toBeDefined();
+    expect(b1.alpha).toBeGreaterThan(0);
+    expect(b1.alpha).toBeLessThan(1);
+    // 按调淡后的底色选字色：黑豆调淡后几乎是白底，还印白字就看不见了
+    expect(b1.fill).toBe('#111');
+    expect(ctx.alphas.at(-1)).toBe(1); // 印完要把透明度还原
   });
 });
 
