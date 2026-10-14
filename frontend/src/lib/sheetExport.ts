@@ -159,15 +159,15 @@ const DIM_LEGEND = 0.3;
  *   再叠 DIM_A 的透明度     —— 整体退到背景里，深色也跟着被白底提起来，
  *                              不会有一整片黑压在图上
  *
- * 这两个值是在界面上拉滑杆试出来的（那两条滑杆调完就删了）。0.9/0.1 的落点是
- * 229..252：调淡的部分几乎只剩一层影子，选中的色号靠满色 + 格内色号 + 背景斜纹
- * 三样一起立起来。
+ * 这两个是**默认值**，当初拉滑杆试出来的。0.9/0.1 的落点是 229..252：调淡的
+ * 部分几乎只剩一层影子，选中的色号靠满色 + 格内色号两样立起来。预览底下有两条
+ * 滑杆让用户自己调（drawSheet 的 dim 参数），不给就用这两个。
  *
  * 两个数是**反向拉扯**的：DIM_A 越小整体越淡越退得远，但调淡后的区间也跟着被
- * 压扁、离白底更近。要重新调的话两个一起动。
+ * 压扁、离白底更近。
  */
-const DIM_V = 0.9;
-const DIM_A = 0.1;
+export const DIM_V = 0.9;
+export const DIM_A = 0.1;
 /**
  * 调淡格子里的色号印成这个透明度。还能照着读，但比选中那几格的满色字退后一截。
  * 字色固定深色：调淡后的格子几乎是白底，按豆子本色选字色的话深豆会印出白字。
@@ -175,10 +175,10 @@ const DIM_A = 0.1;
 const DIM_CODE_A = 0.3;
 const DIM_INK = '#111';
 
-export function dimHex(hex: string): string {
+export function dimHex(hex: string, factor: number = DIM_V): string {
   const n = Number.parseInt(hex, 16);
   const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) =>
-    Math.round(v * DIM_V),
+    Math.round(v * factor),
   );
   return ch.map((v) => v.toString(16).padStart(2, '0')).join('');
 }
@@ -189,12 +189,12 @@ const HATCH = 'rgba(0,0,0,0.07)';
 /**
  * 给一块区域铺上背景斜纹。
  *
- * 解决的是一个很具体的问题：白底上，**空格**、**被调淡的格子**、**本来就接近
- * 白色的豆子**三者长得一模一样。突出显示某个浅色色号时，它整个溶在背景里。
+ * 解决的是一个很具体的问题：白底上，**空格**和**本来就接近白色的豆子**长得
+ * 一模一样。
  *
- * 铺一层斜纹当底，格子画在它上面：不透明的格子把斜纹盖掉，空格直接透出斜纹，
- * 调淡的格子半透地透出斜纹。于是「背景」永远带纹理，**被选中的色号是画面上
- * 唯一平整实心的东西**——哪怕它自己就是米白，也一眼认得出来。
+ * 铺一层斜纹当底，格子画在它上面：不透明的格子把斜纹盖掉，空格直接透出斜纹。
+ * 调淡的格子先垫一层白再上色，**不透斜纹**——斜纹只标「这里没有豆子」，调淡的
+ * 格子本来就淡，再叠一层纹路只会更花。
  *
  * 斜纹间距跟着格子走（半格一条），缩略图和导出的大图看起来是同一种质感。
  */
@@ -230,17 +230,21 @@ export function drawSheet(
     layout: Layout;
     /** 只突出这些色号，其余的调淡。空集或不给 = 全部照常画。 */
     focus?: Set<string>;
+    /** 调淡的亮度倍率 v 和不透明度 a。预览底下的滑杆用它；不给就用 DIM_V / DIM_A。 */
+    dim?: { v: number; a: number };
   },
 ): void {
   const { rows, cols, cells, legend } = params;
   const focus = params.focus?.size ? params.focus : null;
+  const dimV = params.dim?.v ?? DIM_V;
+  const dimA = params.dim?.a ?? DIM_A;
   const { cell, ring, pad, width, height, gridW, gridH, legendTop, legendCols } = params.layout;
 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, width, height);
 
   // --- 背景底纹 ---
-  // 先铺，格子画在它上面。空格透出它，调淡的格子半透地透出它。
+  // 先铺，格子画在它上面。只有空格透出它。
   hatch(ctx, pad, pad, gridW, gridH, Math.max(4, cell / 2));
 
   // --- 格子 ---
@@ -253,8 +257,13 @@ export function drawSheet(
       const x = pad + c * cell;
       const y = pad + r * cell;
       const dim = focus !== null && !focus.has(it.code);
-      ctx.globalAlpha = dim ? DIM_A : 1;
-      ctx.fillStyle = `#${dim ? dimHex(it.hex) : it.hex}`;
+      if (dim) {
+        // 垫一层白把斜纹盖掉，再半透明地叠调淡后的颜色
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x, y, cell, cell);
+      }
+      ctx.globalAlpha = dim ? dimA : 1;
+      ctx.fillStyle = `#${dim ? dimHex(it.hex, dimV) : it.hex}`;
       ctx.fillRect(x, y, cell, cell);
       ctx.globalAlpha = 1;
       const font = codeFont(it.code, cell);

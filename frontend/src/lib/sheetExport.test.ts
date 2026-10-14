@@ -374,6 +374,45 @@ describe('drawSheet', () => {
     expect(ctx.alphas[ctx.alphas.length - 1]).toBe(1);
   });
 
+  it('没选中的格子先垫一层白再上色——斜纹只在空格里露出来', () => {
+    const ctx = ctxStub();
+    const lay = layout(1, 2, 0, { cell: 32 });
+    drawSheet(ctx, {
+      rows: 1,
+      cols: 2,
+      cells: [
+        { code: 'A1', hex: 'FF0000' },
+        { code: 'B1', hex: '0000FF' },
+      ],
+      legend: [],
+      layout: lay,
+      focus: new Set(['A1']),
+    });
+    const rects = vi.mocked(ctx.fillRect).mock.calls;
+    const at = (x: number) => rects.filter(([rx, ry]) => rx === x && ry === lay.pad).length;
+    expect(at(lay.pad)).toBe(1); // 选中的那格不透明，一次就盖住斜纹
+    expect(at(lay.pad + 32)).toBe(2); // 没选中的：先白底、再调淡色
+  });
+
+  it('调淡的亮度和不透明度可以从外面传进来（预览的滑杆）', () => {
+    const ctx = ctxStub();
+    const lay = layout(1, 2, 0, { cell: 32 });
+    drawSheet(ctx, {
+      rows: 1,
+      cols: 2,
+      cells: [
+        { code: 'A1', hex: 'FF0000' },
+        { code: 'B1', hex: '0000FF' },
+      ],
+      legend: [],
+      layout: lay,
+      focus: new Set(['A1']),
+      dim: { v: 0.5, a: 0.6 },
+    });
+    expect(ctx.fills).toContain(`#${dimHex('0000FF', 0.5)}`);
+    expect(ctx.alphas).toContain(0.6);
+  });
+
   it('没选中的格子也印色号，只是用淡一档的深色字', () => {
     const ctx = ctxStub();
     const lay = layout(1, 2, 0, { cell: 32 });

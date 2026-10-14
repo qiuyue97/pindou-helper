@@ -1,6 +1,23 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Eye, RotateCcw } from 'lucide-react';
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { Sheet } from '../../api/types';
-import { RING_PX, drawRingOverlay, drawSheet, layout, sheetToDrawing } from '../../lib/sheetExport';
+import {
+  DIM_A,
+  DIM_V,
+  RING_PX,
+  drawRingOverlay,
+  drawSheet,
+  layout,
+  sheetToDrawing,
+} from '../../lib/sheetExport';
 import { byCode } from '../../lib/sheetSort';
 import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
 
@@ -13,6 +30,39 @@ import { useEffectiveCatalog } from '../../state/useEffectiveCatalog';
  */
 const MAX_CANVAS_PX = 24e6;
 const MAX_CELL = 64;
+
+/** 调淡的两个参数：亮度倍率 v、不透明度 a。用户在滑杆上调，记在浏览器里。 */
+interface Dim {
+  v: number;
+  a: number;
+}
+const DIM_DEFAULT: Dim = { v: DIM_V, a: DIM_A };
+const DIM_KEY = 'pindou.sheetDim';
+/** 两条滑杆的下限：再往下调淡的格子就和黑色/白底分不出来了。 */
+const DIM_MIN_V = 0.1;
+const DIM_MIN_A = 0.1;
+
+/** 读不到、读坏了、超出范围都回默认值——浏览器存储随时可能被清掉或被禁用。 */
+function loadDim(): Dim {
+  try {
+    const raw = window.localStorage.getItem(DIM_KEY);
+    if (!raw) return DIM_DEFAULT;
+    const { v, a } = JSON.parse(raw) as Partial<Dim>;
+    const ok = (n: unknown, min: number): n is number =>
+      typeof n === 'number' && n >= min && n <= 1;
+    return ok(v, DIM_MIN_V) && ok(a, DIM_MIN_A) ? { v, a } : DIM_DEFAULT;
+  } catch {
+    return DIM_DEFAULT;
+  }
+}
+
+function saveDim(d: Dim): void {
+  try {
+    window.localStorage.setItem(DIM_KEY, JSON.stringify(d));
+  } catch {
+    // 无痕模式之类存不进去，只是下次不记得，不影响这次
+  }
+}
 
 /**
  * 图纸预览：和「下载图纸」用**同一个渲染器**画出来的同一张图。
@@ -44,6 +94,11 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
   const { byCode: catalogue } = useEffectiveCatalog();
   /** 选中的色号：只画这些，其余调淡。空 = 全部照常。 */
   const [focus, setFocus] = useState<Set<string>>(new Set());
+  const [dim, setDimState] = useState<Dim>(loadDim);
+  const setDim = (d: Dim) => {
+    setDimState(d);
+    saveDim(d);
+  };
   const [zoom, setZoom] = useState(1);
   const [availW, setAvailW] = useState(1400);
   /** 缩放后把滚动条挪到这里，让光标/双指中点那一点不动。 */
@@ -109,8 +164,9 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
       legend: drawing.legend,
       layout: lay,
       focus,
+      dim,
     });
-  }, [sheet.rows, sheet.cols, drawing, lay, focus]);
+  }, [sheet.rows, sheet.cols, drawing, lay, focus, dim]);
 
   /** 贴边坐标圈。它跟着**视野**走，所以滚一下、缩一下都得重画。 */
   const paintRing = useCallback(() => {
@@ -309,12 +365,92 @@ export default function SheetPreview({ sheet }: { sheet: Sheet }) {
           );
         })}
         {focus.size > 0 && (
-          <button type="button" className="linklike" onClick={() => setFocus(new Set())}>
+          <button type="button" className="ghost-btn" onClick={() => setFocus(new Set())}>
+            <Eye size={14} aria-hidden />
             全部显示
           </button>
         )}
       </div>
+
+      {/* 没选色号时没有东西被调淡，滑杆拉了也看不出变化，干脆不出现 */}
+      {focus.size > 0 && <DimControls dim={dim} onChange={setDim} />}
     </div>
+  );
+}
+
+/**
+ * 调淡的两条滑杆。
+ *
+ * 「透明度」对用户显示的是 1 - a：往右拉更透明、更淡，和字面意思一致；内部
+ * drawSheet 要的是不透明度 a。
+ */
+function DimControls({ dim, onChange }: { dim: Dim; onChange: (d: Dim) => void }) {
+  const isDefault = dim.v === DIM_DEFAULT.v && dim.a === DIM_DEFAULT.a;
+  return (
+    <div className="dim-panel" aria-label="未选中色号的显示">
+      <span className="dim-title">未选中的色号</span>
+      <DimSlider
+        label="亮度"
+        min={DIM_MIN_V}
+        max={1}
+        value={dim.v}
+        onChange={(v) => onChange({ ...dim, v })}
+      />
+      <DimSlider
+        label="透明度"
+        min={0}
+        max={1 - DIM_MIN_A}
+        value={1 - dim.a}
+        // 0.05 步长在浮点里减出来带尾巴（1 - 0.85 = 0.15000000000000002），四舍五入掉
+        onChange={(t) => onChange({ ...dim, a: Math.round((1 - t) * 100) / 100 })}
+      />
+      {/* 一直占着位置，默认值时置灰：调过才冒出来的话，一拉滑杆整行就跳一下 */}
+      <button
+        type="button"
+        className="ghost-btn"
+        disabled={isDefault}
+        onClick={() => onChange(DIM_DEFAULT)}
+      >
+        <RotateCcw size={13} aria-hidden />
+        恢复默认
+      </button>
+    </div>
+  );
+}
+
+/**
+ * 一条滑杆 + 右边的百分比。轨道左半段填主题色，靠 --fill 这个变量告诉 CSS
+ * 填到哪——原生 range 在 WebKit 里没有「已走过的那段」可以单独上色。
+ */
+function DimSlider({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const fill = `${((value - min) / (max - min)) * 100}%`;
+  return (
+    <label className="dim-row">
+      <span>{label}</span>
+      <input
+        type="range"
+        className="range"
+        min={min}
+        max={max}
+        step={0.05}
+        value={value}
+        style={{ '--fill': fill } as CSSProperties}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+      <output>{Math.round(value * 100)}%</output>
+    </label>
   );
 }
 

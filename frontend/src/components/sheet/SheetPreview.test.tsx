@@ -40,6 +40,7 @@ function makeSheet(over: Partial<Sheet> = {}): Sheet {
 let ctx: Ctx2DStub;
 beforeEach(() => {
   ctx = stubCanvas2D();
+  window.localStorage.clear();
 });
 
 /** 画在格子里和画在图例里的所有文字。 */
@@ -95,6 +96,61 @@ it('选中一个色号，其余的压成灰', () => {
   // 选中的、没选中的都印着色号——没选中的只是淡一档，对着拼时旁边是什么照样读得出
   expect(texts()).toContain('H15');
   expect(texts().filter((t) => t === 'B8')).toHaveLength(3); // 两格 + 底部汇总那一条
+});
+
+// ---------- 调淡滑杆 ----------
+
+it('没选色号时没有调淡滑杆，选了才出现', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  expect(screen.queryByRole('slider', { name: /亮度/ })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  expect(screen.getByRole('slider', { name: /亮度/ })).toBeTruthy();
+  expect(screen.getByRole('slider', { name: /透明度/ })).toBeTruthy();
+});
+
+it('拉亮度滑杆，没选中的格子按新亮度重画', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  ctx.fillStyleLog.length = 0;
+  fireEvent.change(screen.getByRole('slider', { name: /亮度/ }), { target: { value: '0.5' } });
+  expect(ctx.fillStyleLog).toContain(`#${dimHex('0000FF', 0.5)}`);
+});
+
+it('透明度往右拉更透明：显示 70% 就是以 0.3 的不透明度画', () => {
+  render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  const slider = screen.getByRole('slider', { name: /透明度/ }) as HTMLInputElement;
+  expect(slider.value).toBe('0.9'); // 默认不透明度 0.1
+  ctx.alphaLog.length = 0;
+  fireEvent.change(slider, { target: { value: '0.7' } });
+  expect(screen.getByText('70%')).toBeTruthy();
+  expect(ctx.alphaLog).toContain(0.3);
+});
+
+it('调过的值记在浏览器里，下次打开还是它；恢复默认回到初始值', () => {
+  const { unmount } = render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  const reset = () => screen.getByRole('button', { name: '恢复默认' }) as HTMLButtonElement;
+  expect(reset().disabled).toBe(true);
+  fireEvent.change(screen.getByRole('slider', { name: /亮度/ }), { target: { value: '0.5' } });
+  unmount();
+
+  render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  const v = screen.getByRole('slider', { name: /亮度/ }) as HTMLInputElement;
+  expect(v.value).toBe('0.5');
+  const reset2 = screen.getByRole('button', { name: '恢复默认' }) as HTMLButtonElement;
+  expect(reset2.disabled).toBe(false);
+  fireEvent.click(reset2);
+  expect(v.value).toBe('0.9');
+  expect(reset2.disabled).toBe(true); // 回到默认值后置灰，但位置还在
+});
+
+it('浏览器里存的值坏了就用默认值，不崩', () => {
+  window.localStorage.setItem('pindou.sheetDim', '{"v":"x","a":5}');
+  render(<SheetPreview sheet={makeSheet()} />);
+  fireEvent.click(screen.getByRole('button', { name: /H15/ }));
+  expect((screen.getByRole('slider', { name: /亮度/ }) as HTMLInputElement).value).toBe('0.9');
 });
 
 it('再点一下取消，全部恢复', () => {
