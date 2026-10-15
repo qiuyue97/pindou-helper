@@ -10,4 +10,5 @@
 .env.*
 !.env.example
 docs/
+logs/
 *.md

@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     static_dir: str = ""
     #: 业务日志（pindou.*）的级别。排查时临时调成 DEBUG。
     log_level: str = "INFO"
+    #: 再落一份日志文件的目录。空 = 不落文件（开发机）。容器里挂到宿主机，重建容器
+    #: 也不丢——docker 自己的日志跟着容器走，部署一次就没了。
+    log_dir: str = ""
+    #: 日志文件按天切，留这么多天。
+    log_keep_days: int = 30
 
     # --- 智能管控用的 LLM（OpenAI 兼容网关）---
     llm_base_url: str = ""

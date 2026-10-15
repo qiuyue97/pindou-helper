@@ -179,6 +179,8 @@ location / {
 | `PINDOU_JWT_SECRET` | 必填 | 会话签名密钥，≥32 字符 |
 | `PINDOU_COOKIE_SECURE` | `1` | 默认按 https 部署。仅在临时用 `http://` 直连调试时改成 `0`，否则浏览器会拒存 cookie，表现为每次请求都掉登录 |
 | `TZ` | `Asia/Shanghai` | 只影响服务端日志时间；界面时间用浏览器本地时区 |
+| `PINDOU_LOG_LEVEL` | `INFO` | 业务日志级别，排查时临时调成 `DEBUG` |
+| `PINDOU_LOG_KEEP_DAYS` | `30` | 日志文件保留天数。文件在宿主机 `./logs/`（`pindou.log` 是当天，`pindou.log.2026-10-14` 是往日），重建容器不丢；目录要给容器的 uid 10001 写权限：`mkdir -p logs && chmod 777 logs` |
 | `PINDOU_PORT` | `8000` | 宿主机映射端口。容器内固定 8000，宿主机端口冲突时改这个 |
 
 VIP 功能要用的外部服务，**不配也不影响其余功能**——对应接口返回 503：

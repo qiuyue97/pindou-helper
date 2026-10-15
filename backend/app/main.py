@@ -15,7 +15,7 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 def create_app() -> FastAPI:
     settings = get_settings()
     # 最先做：后面那条 JWT 警告、init_db 清理残留任务的日志都要能打出来
-    configure_logging(settings.log_level)
+    configure_logging(settings.log_level, settings.log_dir, settings.log_keep_days)
     if settings.jwt_secret == DEV_INSECURE_SECRET:
         log.warning("PINDOU_JWT_SECRET is the insecure default — set it in production")
 

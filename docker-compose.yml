@@ -27,6 +27,10 @@ services:
       TZ: ${TZ:-Asia/Shanghai}
       # 业务日志级别。排查卡住、超时之类的问题时临时调成 DEBUG。
       PINDOU_LOG_LEVEL: ${PINDOU_LOG_LEVEL:-INFO}
+      # 业务日志另写一份文件，按天切。docker logs 跟着容器走，部署一次就没了；
+      # 这份落在下面挂载的 ./logs 里，重建容器也还在。
+      PINDOU_LOG_DIR: /logs
+      PINDOU_LOG_KEEP_DAYS: ${PINDOU_LOG_KEEP_DAYS:-30}
       # 智能管控（VIP）用的 LLM 网关。不填则该功能返回 503，其余功能不受影响。
       PINDOU_LLM_BASE_URL: ${PINDOU_LLM_BASE_URL:-}
       PINDOU_LLM_API_KEY: ${PINDOU_LLM_API_KEY:-}
@@ -50,6 +54,10 @@ services:
     volumes:
       # SQLite 在这里。备份这一个卷就等于备份全部数据。
       - pindou-data:/data
+      # 日志文件。容器里以 uid 10001 运行，宿主机这个目录要给它写权限：
+      #   mkdir -p logs && chmod 777 logs
+      # 没配好也不影响服务，只是不落文件（启动时打一条警告）。
+      - ./logs:/logs
     restart: unless-stopped
 
 volumes:
