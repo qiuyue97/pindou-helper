@@ -128,6 +128,48 @@ def test_a_failing_ai_extraction_does_not_fail_the_job(vip, uploaded, monkeypatc
     assert all(row["prior"] is None for row in d["counts"])
 
 
+def test_waiting_on_the_ai_prior_is_logged(vip, uploaded, monkeypatch, caplog):  # noqa: F811
+    """CV 跑完、进度停在 85%，还在等 AI 先验——这段空档就是「卡在 4、5 步之间」。
+
+    日志里必须看得出：CV 用了多久、等先验又等了多久。
+    """
+    import logging
+
+    from app.routers import sheets as mod
+
+    def slow(*a, **k):
+        time.sleep(0.5)
+        return {"H15": 3}, "kimi-k3"
+
+    monkeypatch.setattr(mod, "_fetch_prior", slow)
+    caplog.set_level(logging.INFO, logger="pindou")
+    sid, s = uploaded
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    _wait(vip, sid)
+    msgs = [r.getMessage() for r in caplog.records if r.name.startswith("pindou")]
+    assert any(f"图纸 {sid}" in m and "开始识别" in m for m in msgs), msgs
+    assert any(f"图纸 {sid}" in m and "等 AI 先验" in m for m in msgs), msgs
+    assert any(f"图纸 {sid}" in m and "AI 先验到了" in m for m in msgs), msgs
+    assert any(f"图纸 {sid}" in m and "识别完成" in m and "总用时" in m for m in msgs), msgs
+
+
+def test_a_failure_is_logged_with_its_traceback(vip, uploaded, monkeypatch, caplog):  # noqa: F811
+    import logging
+
+    from app.routers import sheets as mod
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(mod.pipeline, "analyse", boom)
+    caplog.set_level(logging.INFO, logger="pindou")
+    sid, s = uploaded
+    vip.post(f"/api/sheets/{sid}/recognise", json=_geom(s), headers=XRW)
+    _wait(vip, sid, "failed")
+    failed = [r for r in caplog.records if "识别失败" in r.getMessage()]
+    assert failed and failed[0].exc_info is not None
+
+
 def test_the_ocr_is_called_exactly_once_per_job(vip, uploaded, monkeypatch):  # noqa: F811
     """先验比 CV 晚到，但**绝不能**因此整条重跑。
 

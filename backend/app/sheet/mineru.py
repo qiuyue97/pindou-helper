@@ -125,6 +125,7 @@ def parse_pages(pngs: list[bytes], token: str, *, model: str = "vlm",
         raise MineruError(f"submit failed: {r}")
     batch = r["data"]["batch_id"]
     urls = r["data"]["file_urls"]
+    log.info("mineru 已提交 batch=%s 共 %d 页", batch, len(pngs))
     if len(urls) != len(pngs):
         raise MineruError(f"asked for {len(pngs)} upload urls, got {len(urls)}")
     for url, png in zip(urls, pngs, strict=True):
@@ -147,6 +148,7 @@ def parse_pages(pngs: list[bytes], token: str, *, model: str = "vlm",
         if on_page:
             on_page(sum(v is not None for v in out), len(out))
         if all(v is not None for v in out):
+            log.info("mineru batch=%s 解析完成 用时 %.1fs", batch, time.time() - t0)
             return out  # type: ignore[return-value]
         time.sleep(poll)
     raise MineruError(f"batch {batch} did not finish in {timeout}s")

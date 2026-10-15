@@ -12,6 +12,7 @@ import io
 import logging
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -195,12 +196,17 @@ def _fetch_prior(name: str, data: bytes, settings: Settings):
     返回 `(prior, model)`。抽不出来返回 `({}, "")`。
     """
     if not settings.fastgpt_configured:
+        log.info("没配 FastGPT，跳过 AI 先验")
         return {}, ""
+    t0 = time.monotonic()
     result = fastgpt_recognise([(name, data)], settings)
     if not result.is_extraction:
+        log.info("AI 先验没抽出东西 model=%s 用时 %.1fs", result.model, time.monotonic() - t0)
         return {}, result.model
     prior = {p.code: p.qty for p in parse_lines(result.bead_list)
              if p.status == "ok" and p.code and p.qty}
+    log.info("AI 先验抽取完成 model=%s 色号数=%d 总豆数=%d 用时 %.1fs",
+             result.model, len(prior), sum(prior.values()), time.monotonic() - t0)
     return prior, result.model
 
 
@@ -220,14 +226,28 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
 
     # 并发闸门是先到先得的，所以「排队中」和「已经在算」得分得开：卡在这里的图纸
     # 什么都没发生，进度条不该动。
+    t0 = time.monotonic()
+    log.info("图纸 %s 开始识别 %dx%d 色卡=%s", sheet_id, geom.rows, geom.cols, geom.palette)
     update(status="running", step="排队等前面的图纸", progress=0)
     with _semaphore(settings):
+        waited = time.monotonic() - t0
+        if waited >= 1:
+            log.info("图纸 %s 排队 %.1fs 后拿到名额", sheet_id, waited)
         try:
+            last_step = [""]
+
             def on_step(text: str, pct: int) -> None:
+                # 页数进度每轮询一次报一回，文案没变就不重复记
+                if text != last_step[0]:
+                    last_step[0] = text
+                    log.info("图纸 %s 进度 %d%% %s", sheet_id, pct, text)
                 update(step=text, progress=pct)
 
             # CV 和 AI 抽取并行：CV 不需要等先验才能开始，先验只在定案那一步筛答案。
-            with ThreadPoolExecutor(max_workers=2) as pool:
+            # 线程名带上图纸号，日志里一眼分得清是哪一张的。
+            with ThreadPoolExecutor(max_workers=2,
+                                    thread_name_prefix=f"sheet-{sheet_id}") as pool:
+                t_work = time.monotonic()
                 fut_prior = pool.submit(_fetch_prior, name, data, settings)
                 fut_cv = pool.submit(
                     pipeline.analyse, data, geom,
@@ -236,11 +256,21 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
                     on_step=on_step,
                 )
                 analysis = fut_cv.result()
+                t_cv = time.monotonic() - t_work
+                log.info("图纸 %s CV 完成 engine=%s 类数=%d 用时 %.1fs",
+                         sheet_id, analysis.engine, len(analysis.stats), t_cv)
+                # 这里就是进度条停在「色号读完 85%」、迟迟进不了「对账定案」的那段空档
+                if not fut_prior.done():
+                    log.info("图纸 %s 等 AI 先验（FastGPT）返回…", sheet_id)
                 try:
-                    prior, _model = fut_prior.result()
-                except Exception as exc:  # noqa: BLE001
+                    prior, model = fut_prior.result()
+                    log.info("图纸 %s AI 先验到了 model=%s 色号数=%d，比 CV 多等了 %.1fs",
+                             sheet_id, model or "-", len(prior),
+                             max(0.0, time.monotonic() - t_work - t_cv))
+                except Exception:
                     # 图例读不到不是「全都对不上」，只是没有第二份证据。
-                    log.info("图纸 %s 的 AI 先验取不到：%s", sheet_id, exc)
+                    log.warning("图纸 %s 的 AI 先验取不到，按没有先验定案", sheet_id,
+                                exc_info=True)
                     prior = {}
 
             # 先验比 CV 晚到，所以定案单独一步。这里**绝不能**改成整条重跑
@@ -248,8 +278,9 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
             # 还要重新采样、重新聚类。finalise 是纯计算。
             update(step="对账定案", progress=92)
             res = pipeline.finalise(analysis, prior or None)
-        except Exception as exc:  # noqa: BLE001 — 线程里任何异常都必须落库
-            log.warning("图纸识别失败 sheet=%s: %s", sheet_id, exc)
+        except Exception as exc:  # 线程里任何异常都必须落库
+            log.warning("图纸 %s 识别失败，用时 %.1fs", sheet_id, time.monotonic() - t0,
+                        exc_info=True)
             update(status="failed", step="", progress=0,
                    error=str(exc)[:300] if isinstance(exc, ValueError) else "识别失败",
                    finished_at=datetime.now(UTC))
@@ -259,8 +290,8 @@ def _run(sheet_id: int, data: bytes, name: str, geom: pipeline.Geometry,
                counts=res.counts, prior=prior, engine=res.engine,
                structured=res.structured, error="", step="", progress=100,
                finished_at=datetime.now(UTC))
-        log.info("图纸识别完成 sheet=%s engine=%s 类数=%d",
-                 sheet_id, res.engine, len(res.classes))
+        log.info("图纸 %s 识别完成 engine=%s 类数=%d 总用时 %.1fs",
+                 sheet_id, res.engine, len(res.classes), time.monotonic() - t0)
 
 
 @router.post("/sheets/{sheet_id}/recognise", response_model=SheetOut,
@@ -350,8 +381,14 @@ def _run_generate(sheet_id: int, data: bytes, rect: list[float],
                 setattr(s, k, v)
             session.commit()
 
+    t0 = time.monotonic()
+    log.info("图纸 %s 开始生成 %dx%d 色卡=%s style=%s", sheet_id, rows, cols,
+             palette_name, style)
     update(status="running", step="排队等前面的图纸", progress=0)
     with _semaphore(settings):
+        waited = time.monotonic() - t0
+        if waited >= 1:
+            log.info("图纸 %s 排队 %.1fs 后拿到名额", sheet_id, waited)
         try:
             im = pipeline.decode_image(data)          # BGR
             x0, y0, x1, y1 = (round(v) for v in rect)
@@ -373,8 +410,9 @@ def _run_generate(sheet_id: int, data: bytes, rect: list[float],
                 for flat in rec.cells:
                     labels[flat] = rec.klass
             counts = reconcile(records, None)
-        except Exception as exc:  # noqa: BLE001 — 线程里任何异常都必须落库
-            log.warning("图纸生成失败 sheet=%s: %s", sheet_id, exc)
+        except Exception as exc:  # 线程里任何异常都必须落库
+            log.warning("图纸 %s 生成失败，用时 %.1fs", sheet_id, time.monotonic() - t0,
+                        exc_info=True)
             update(status="failed", step="", progress=0,
                    error=str(exc)[:300] if isinstance(exc, ValueError) else "生成失败",
                    finished_at=datetime.now(UTC))
@@ -385,8 +423,8 @@ def _run_generate(sheet_id: int, data: bytes, rect: list[float],
                counts=[asdict(c) for c in counts], prior={},
                engine=f"generate/{style}", structured=True, error="",
                step="", progress=100, finished_at=datetime.now(UTC))
-        log.info("图纸生成完成 sheet=%s style=%s 色号数=%d",
-                 sheet_id, style, len(records))
+        log.info("图纸 %s 生成完成 style=%s 色号数=%d 总用时 %.1fs",
+                 sheet_id, style, len(records), time.monotonic() - t0)
 
 
 @router.post("/sheets/{sheet_id}/generate", response_model=SheetOut,

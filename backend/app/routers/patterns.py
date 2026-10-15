@@ -8,6 +8,7 @@
 import logging
 import os
 import threading
+import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -86,11 +87,14 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
             })
         return sorted(out, key=lambda r: r["index"])
 
+    t0 = time.monotonic()
+    log.info("按图扣减 job=%s 开始识别 %d 张图", job_id, len(images))
     update(status="running")
     try:
         result = recognise(images, settings)
-    except Exception as exc:  # noqa: BLE001 - 线程里任何异常都必须落库，不能吞掉
-        log.warning("图纸识别失败 job=%s: %s", job_id, exc)
+    except Exception as exc:  # 线程里任何异常都必须落库，不能吞掉
+        log.warning("按图扣减 job=%s 识别失败，用时 %.1fs", job_id, time.monotonic() - t0,
+                    exc_info=True)
         update(
             status="failed",
             # 网关的原始报错可能带 key，只留类型和简短说明。
@@ -102,7 +106,7 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
     if not result.is_extraction:
         # 图里没有色号统计区域。这不是失败——模型在 nl_response 里说明了原因——
         # 但也没有任何可扣减的东西，所以要跟正常结果区分开。
-        log.info("图纸识别无可提取内容 job=%s", job_id)
+        log.info("按图扣减 job=%s 无可提取内容", job_id)
     items = merged(result.outcomes)
     failed = [it for it in items if it["status"] != "ok"]
     update(
@@ -118,8 +122,8 @@ def _run_job(job_id: int, images: list[tuple[str, bytes]], settings: Settings) -
         finished_at=datetime.now(UTC),
     )
     log.info(
-        "图纸识别完成 job=%s model=%s ok=%d/%d",
-        job_id, result.model, len(items) - len(failed), len(items),
+        "按图扣减 job=%s 识别完成 model=%s ok=%d/%d 总用时 %.1fs",
+        job_id, result.model, len(items) - len(failed), len(items), time.monotonic() - t0,
     )
 
 

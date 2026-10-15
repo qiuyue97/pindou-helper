@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     cors_origins: str = "http://localhost:5173"
     static_dir: str = ""
+    #: 业务日志（pindou.*）的级别。排查时临时调成 DEBUG。
+    log_level: str = "INFO"
 
     # --- 智能管控用的 LLM（OpenAI 兼容网关）---
     llm_base_url: str = ""

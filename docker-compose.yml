@@ -25,6 +25,8 @@ services:
       PINDOU_COOKIE_SECURE: ${PINDOU_COOKIE_SECURE:-1}
       # 影响服务端日志时间戳；界面时间用浏览器本地时区。
       TZ: ${TZ:-Asia/Shanghai}
+      # 业务日志级别。排查卡住、超时之类的问题时临时调成 DEBUG。
+      PINDOU_LOG_LEVEL: ${PINDOU_LOG_LEVEL:-INFO}
       # 智能管控（VIP）用的 LLM 网关。不填则该功能返回 503，其余功能不受影响。
       PINDOU_LLM_BASE_URL: ${PINDOU_LLM_BASE_URL:-}
       PINDOU_LLM_API_KEY: ${PINDOU_LLM_API_KEY:-}

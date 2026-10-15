@@ -16,6 +16,8 @@ from __future__ import annotations
 import concurrent.futures as cf
 import logging
 import os
+import threading
+import time
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
@@ -77,6 +79,7 @@ def upload_image(
     put = client.put(presign["url"], content=data, headers=presign.get("headers") or {})
     if put.status_code not in (200, 204):
         raise FastGPTError(f"上传图片失败 HTTP {put.status_code}")
+    log.debug("已上传 %s（%d 字节）", filename, len(data))
     return presign["previewUrl"]
 
 
@@ -84,6 +87,8 @@ def _invoke(
     client: httpx.Client, settings: Settings, image_urls: list[str], model: str
 ) -> PatternResult:
     base = settings.fastgpt_base_url.rstrip("/")
+    t0 = time.monotonic()
+    log.info("调用 FastGPT 工作流 model=%s 图片=%d 张", model, len(image_urls))
     res = client.post(
         f"{base}/v1/chat/completions",
         headers={**_headers(settings), "Content-Type": "application/json"},
@@ -98,6 +103,8 @@ def _invoke(
             },
         },
     )
+    log.info("FastGPT 返回 model=%s HTTP %d 用时 %.1fs",
+             model, res.status_code, time.monotonic() - t0)
     res.raise_for_status()
     payload = res.json()
 
@@ -114,6 +121,9 @@ def _invoke(
             plugin_output = seg.get("pluginOutput")
 
     if not isinstance(plugin_output, dict):
+        # 工作流跑了但输出形状不对：把各节点类型记下来，看是哪一步没走到
+        log.warning("FastGPT 没有 pluginOutput model=%s 节点=%s", model,
+                    [seg.get("moduleType") for seg in payload.get("responseData") or []])
         raise FastGPTError("插件没有返回 pluginOutput")
 
     return PatternResult(
@@ -308,7 +318,9 @@ def recognise(
             return idx, urls, _try_models(client, settings, urls,
                                           models if fits else big_models)
 
-        with cf.ThreadPoolExecutor(max_workers=settings.fastgpt_concurrency) as pool:
+        # 线程名沿用调用方的（sheet-12 / pattern-3），日志里分得清是哪个任务发的请求
+        with cf.ThreadPoolExecutor(max_workers=settings.fastgpt_concurrency,
+                                   thread_name_prefix=threading.current_thread().name) as pool:
             for idx, urls, (res, err) in pool.map(run, batches):
                 if res is not None:
                     results.append((idx, res))
@@ -347,6 +359,15 @@ def _brief(exc: Exception) -> str:
     return f"{type(exc).__name__}"
 
 
+def _status_of(exc: Exception) -> str:
+    """日志里补一句 HTTP 状态码。只取状态码，不取响应体——那里面可能有凭据。"""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    if isinstance(exc, FastGPTError):
+        return str(exc)[:200]
+    return ""
+
+
 def _is_inline_limited(model: str, settings: Settings) -> bool:
     """这个模型是不是走"把图转成 base64 内联"的那条链路。
 
@@ -361,10 +382,12 @@ def _try_models(
     """按顺序试模型，返回 (结果, 失败说明)。全失败就是 (None, 说明)。"""
     failures: list[str] = []
     for model in models:
+        t0 = time.monotonic()
         try:
             return _invoke(client, settings, urls, model), ""
         except Exception as exc:  # noqa: BLE001 - 任何失败都只是"换下一个"
-            log.warning("FastGPT 用 %s 失败：%s", model, exc.__class__.__name__)
+            log.warning("FastGPT 用 %s 失败（%.1fs）：%s %s", model, time.monotonic() - t0,
+                        exc.__class__.__name__, _status_of(exc))
             failures.append(f"{model}: {_brief(exc)}")
     return None, "；".join(failures)
 

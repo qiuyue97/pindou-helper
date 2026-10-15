@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.config import DEV_INSECURE_SECRET, get_settings
 from app.db import init_db
+from app.logs import configure_logging
 
 log = logging.getLogger("pindou")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -13,6 +14,8 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # 最先做：后面那条 JWT 警告、init_db 清理残留任务的日志都要能打出来
+    configure_logging(settings.log_level)
     if settings.jwt_secret == DEV_INSECURE_SECRET:
         log.warning("PINDOU_JWT_SECRET is the insecure default — set it in production")
 
