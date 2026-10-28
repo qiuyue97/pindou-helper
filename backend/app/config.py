@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     # 按顺序尝试，前一个失败就退到下一个。
+    # glm-5.3-flash 放最后：实测时快时慢（5s～113s），排前面会让后面的模型白等一个超时。
     llm_models: str = (
-        "Kimi-K3-256K,GLM-5.2,dashscope/qwen3.8-max,"
-        "gemini/gemma-4-31b-it,azure_ai/gpt-5.6-terra"
+        "Kimi-K3,dashscope/qwen3.8-max,gpt-6.1-sol,glm-5.3-flash"
     )
     llm_timeout: float = 60.0
 
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     fastgpt_api_key: str = ""
     fastgpt_app_id: str = ""
     # 按顺序尝试。工作流的 model_name 入参已接到 AI 节点上，这里改能真的换模型。
-    fastgpt_models: str = "kimi-k3,gpt-5.6-terra"
+    fastgpt_models: str = "kimi-k3,gpt-6.1-sol"
     # 识别可能很久，而且整个调用在后台线程里，卡住也不影响前台。
     fastgpt_timeout: float = 20 * 60
     #: 用户原图的存放目录。要落在持久卷上，否则重建容器就没了。
